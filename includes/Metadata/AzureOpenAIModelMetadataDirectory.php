@@ -34,7 +34,7 @@ use WordPress\AiClient\Providers\OpenAiCompatibleImplementation\AbstractOpenAiCo
  * @since 1.0.0
  *
  * @phpstan-type ModelsResponseData array{
- *     data: list<array{id: string}>
+ *     data: list<array{id: string, lifecycle_status?: string, capabilities?: array<string, bool>}>
  * }
  */
 class AzureOpenAIModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetadataDirectory {
@@ -109,6 +109,38 @@ class AzureOpenAIModelMetadataDirectory extends AbstractOpenAiCompatibleModelMet
 			)
 		);
 
+		$gpt_multimodal_speech_output_options = array_merge(
+			$gpt_base_options,
+			array(
+				new SupportedOption(
+					OptionEnum::inputModalities(),
+					array(
+						array( ModalityEnum::text() ),
+						array( ModalityEnum::text(), ModalityEnum::image() ),
+						array( ModalityEnum::text(), ModalityEnum::image(), ModalityEnum::audio() ),
+						array( ModalityEnum::text(), ModalityEnum::document() ),
+						array( ModalityEnum::text(), ModalityEnum::image(), ModalityEnum::document() ),
+					)
+				),
+				new SupportedOption(
+					OptionEnum::outputModalities(),
+					array(
+						array( ModalityEnum::text() ),
+						array( ModalityEnum::text(), ModalityEnum::audio() ),
+					)
+				),
+			)
+		);
+
+		$gpt_search_options = array(
+			new SupportedOption( OptionEnum::systemInstruction() ),
+			new SupportedOption( OptionEnum::outputMimeType(), array( 'text/plain', 'application/json' ) ),
+			new SupportedOption( OptionEnum::outputSchema() ),
+			new SupportedOption( OptionEnum::customOptions() ),
+			new SupportedOption( OptionEnum::inputModalities(), array( array( ModalityEnum::text() ) ) ),
+			new SupportedOption( OptionEnum::outputModalities(), array( array( ModalityEnum::text() ) ) ),
+		);
+
 		$image_capabilities  = array( CapabilityEnum::imageGeneration() );
 		$dalle_image_options = array(
 			new SupportedOption( OptionEnum::inputModalities(), array( array( ModalityEnum::text() ) ) ),
@@ -157,63 +189,93 @@ class AzureOpenAIModelMetadataDirectory extends AbstractOpenAiCompatibleModelMet
 			new SupportedOption( OptionEnum::customOptions() ),
 		);
 
-		$models_data = (array) $response_data['data'];
+		// Only include models that are generally available.
+		$models_data = array_values(
+			array_filter(
+				(array) $response_data['data'],
+				static function ( array $model_data ): bool {
+					return ! isset( $model_data['lifecycle_status'] ) ||
+						'generally-available' === $model_data['lifecycle_status'];
+				}
+			)
+		);
 
 		$models = array_values(
-			array_map(
-				static function ( array $model_data ) use (
-					$gpt_capabilities,
-					$gpt_options,
-					$gpt_multimodal_input_options,
-					$image_capabilities,
-					$dalle_image_options,
-					$gpt_image_options,
-					$tts_capabilities,
-					$tts_options
-				): ModelMetadata {
-					$model_id = $model_data['id'];
+			array_filter(
+				array_map(
+					static function ( array $model_data ) use (
+						$gpt_capabilities,
+						$gpt_options,
+						$gpt_multimodal_input_options,
+						$gpt_multimodal_speech_output_options,
+						$gpt_search_options,
+						$image_capabilities,
+						$dalle_image_options,
+						$gpt_image_options,
+						$tts_capabilities,
+						$tts_options
+					): ?ModelMetadata {
+						$model_id = $model_data['id'];
 
-					if (
-						0 === strpos( $model_id, 'dall-e-' ) ||
-						0 === strpos( $model_id, 'gpt-image-' )
-					) {
-						$model_caps = $image_capabilities;
-						if ( 0 === strpos( $model_id, 'gpt-image-' ) ) {
-							$model_options = $gpt_image_options;
+						if (
+							0 === strpos( $model_id, 'dall-e-' ) ||
+							0 === strpos( $model_id, 'gpt-image-' )
+						) {
+							$model_caps = $image_capabilities;
+
+							if ( 0 === strpos( $model_id, 'gpt-image-' ) ) {
+								$model_options = $gpt_image_options;
+							} else {
+								$model_options = $dalle_image_options;
+							}
+						} elseif (
+							0 === strpos( $model_id, 'tts-' ) ||
+							false !== strpos( $model_id, '-tts' )
+						) {
+							$model_caps    = $tts_capabilities;
+							$model_options = $tts_options;
+						} elseif (
+							( str_starts_with( $model_id, 'gpt-' ) || str_starts_with( $model_id, 'o1-' ) ) &&
+							! str_contains( $model_id, '-instruct' ) &&
+							! str_contains( $model_id, '-realtime' )
+						) {
+							if ( str_starts_with( $model_id, 'gpt-4o' ) ) {
+								$model_caps    = $gpt_capabilities;
+								$model_options = $gpt_multimodal_input_options;
+
+								// New multimodal output model for audio generation.
+								if ( str_contains( $model_id, '-audio' ) ) {
+									$model_options = $gpt_multimodal_speech_output_options;
+								} elseif ( str_contains( $model_id, '-search' ) ) {
+									$model_options = $gpt_search_options;
+								}
+							} elseif ( ! str_contains( $model_id, '-audio' ) ) {
+								$model_caps    = $gpt_capabilities;
+								$model_options = $gpt_options;
+							} else {
+								$model_caps    = array();
+								$model_options = array();
+							}
 						} else {
-							$model_options = $dalle_image_options;
-						}
-					} elseif (
-						0 === strpos( $model_id, 'tts-' ) ||
-						false !== strpos( $model_id, '-tts' )
-					) {
-						$model_caps    = $tts_capabilities;
-						$model_options = $tts_options;
-					} elseif ( 0 === strpos( $model_id, 'gpt-4o' ) ) {
-						$model_caps    = $gpt_capabilities;
-						$model_options = $gpt_multimodal_input_options;
-					} elseif (
-						0 === strpos( $model_id, 'gpt-' ) ||
-						0 === strpos( $model_id, 'o1-' ) ||
-						0 === strpos( $model_id, 'o3-' ) ||
-						0 === strpos( $model_id, 'o4-' )
-					) {
-						$model_caps    = $gpt_capabilities;
-						$model_options = $gpt_options;
-					} else {
-						// Unknown deployment name: fall back to text generation with chat history.
-						$model_caps    = $gpt_capabilities;
-						$model_options = $gpt_options;
-					}
+							// Unknown model, only include if the model declares
+							// the chat_completion capability in the API response.
+							if ( empty( $model_data['capabilities']['chat_completion'] ) ) {
+								return null;
+							}
 
-					return new ModelMetadata(
-						$model_id,
-						$model_id,
-						$model_caps,
-						$model_options
-					);
-				},
-				$models_data
+							$model_caps    = $gpt_capabilities;
+							$model_options = $gpt_options;
+						}
+
+						return new ModelMetadata(
+							$model_id,
+							$model_id,
+							$model_caps,
+							$model_options
+						);
+					},
+					$models_data
+				)
 			)
 		);
 
@@ -225,6 +287,12 @@ class AzureOpenAIModelMetadataDirectory extends AbstractOpenAiCompatibleModelMet
 	/**
 	 * Callback function for sorting models by ID, to be used with `usort()`.
 	 *
+	 * This method expresses preferences for certain models or model families
+	 * within the provider by putting them earlier in the sorted list. The
+	 * objective is not to be opinionated about which models are better, but
+	 * to ensure that more commonly used, more recent, or flagship models
+	 * are presented first to users.
+	 *
 	 * @since 1.0.0
 	 *
 	 * @param \WordPress\AiClient\Providers\Models\DTO\ModelMetadata $a First model.
@@ -232,6 +300,74 @@ class AzureOpenAIModelMetadataDirectory extends AbstractOpenAiCompatibleModelMet
 	 * @return int Comparison result.
 	 */
 	protected function modelSortCallback( ModelMetadata $a, ModelMetadata $b ): int {
+		$a_id = $a->getId();
+		$b_id = $b->getId();
+
+		// Prefer non-preview models over preview models.
+		if ( str_contains( $a_id, '-preview' ) && ! str_contains( $b_id, '-preview' ) ) {
+			return 1;
+		}
+
+		if ( str_contains( $b_id, '-preview' ) && ! str_contains( $a_id, '-preview' ) ) {
+			return -1;
+		}
+
+		// Prefer GPT models over non-GPT models.
+		if ( str_starts_with( $a_id, 'gpt-' ) && ! str_starts_with( $b_id, 'gpt-' ) ) {
+			return -1;
+		}
+
+		if ( str_starts_with( $b_id, 'gpt-' ) && ! str_starts_with( $a_id, 'gpt-' ) ) {
+			return 1;
+		}
+
+		// Prefer GPT models with version numbers (e.g. 'gpt-5.1', 'gpt-5') over those without.
+		$a_match = preg_match( '/^gpt-([0-9.]+)(-[a-z0-9-]+)?$/', $a_id, $a_matches );
+		$b_match = preg_match( '/^gpt-([0-9.]+)(-[a-z0-9-]+)?$/', $b_id, $b_matches );
+
+		if ( $a_match && ! $b_match ) {
+			return -1;
+		}
+
+		if ( $b_match && ! $a_match ) {
+			return 1;
+		}
+
+		if ( $a_match && $b_match ) {
+			// Prefer later model versions.
+			$a_version = $a_matches[1];
+			$b_version = $b_matches[1];
+
+			if ( version_compare( $a_version, $b_version, '>' ) ) {
+				return -1;
+			}
+
+			if ( version_compare( $b_version, $a_version, '>' ) ) {
+				return 1;
+			}
+
+			// Prefer models without a suffix (i.e. base models) over those with a suffix.
+			if ( ! isset( $a_matches[2] ) && isset( $b_matches[2] ) ) {
+				return -1;
+			}
+
+			if ( ! isset( $b_matches[2] ) && isset( $a_matches[2] ) ) {
+				return 1;
+			}
+
+			// Prefer '-mini' models over others with a suffix.
+			if ( isset( $a_matches[2] ) && isset( $b_matches[2] ) ) {
+				if ( '-mini' === $a_matches[2] && '-mini' !== $b_matches[2] ) {
+					return -1;
+				}
+
+				if ( '-mini' === $b_matches[2] && '-mini' !== $a_matches[2] ) {
+					return 1;
+				}
+			}
+		}
+
+		// Fallback: Sort alphabetically.
 		return strcmp( $a->getId(), $b->getId() );
 	}
 }

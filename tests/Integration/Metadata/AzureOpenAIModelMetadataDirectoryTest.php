@@ -56,17 +56,33 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 	/**
 	 * Builds a fake /models 200 response containing the given model IDs.
 	 *
+	 * All models are set to 'generally-available' by default.
+	 *
 	 * @param list<string> $model_ids The model IDs (deployment names) to include.
 	 * @return \WordPress\AiClient\Providers\Http\DTO\Response
 	 */
 	private function make_models_response( array $model_ids ): Response {
 		$data = array_map(
 			static function ( string $id ): array {
-				return array( 'id' => $id );
+				return array(
+					'id'               => $id,
+					'lifecycle_status' => 'generally-available',
+				);
 			},
 			$model_ids
 		);
 		$body = (string) json_encode( array( 'data' => $data ) );
+		return new Response( 200, array(), $body );
+	}
+
+	/**
+	 * Builds a fake /models 200 response with explicit lifecycle statuses per model.
+	 *
+	 * @param list<array{id: string, lifecycle_status: string}> $models Model data with id and lifecycle_status.
+	 * @return \WordPress\AiClient\Providers\Http\DTO\Response
+	 */
+	private function make_models_response_with_status( array $models ): Response {
+		$body = (string) json_encode( array( 'data' => $models ) );
 		return new Response( 200, array(), $body );
 	}
 
@@ -84,6 +100,89 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 			}
 		}
 		return null;
+	}
+
+	// -----------------------------------------------------------------------
+	// Lifecycle status filtering tests
+	// -----------------------------------------------------------------------
+
+	/**
+	 * Tests that deprecated models are excluded from the list.
+	 */
+	public function test_deprecated_models_are_excluded(): void {
+		$this->transporter->set_response_to_return(
+			$this->make_models_response_with_status(
+				array(
+					array( 'id' => 'gpt-4o', 'lifecycle_status' => 'generally-available' ),
+					array( 'id' => 'gpt-35-turbo', 'lifecycle_status' => 'deprecated' ),
+				)
+			)
+		);
+
+		$models = $this->directory->listModelMetadata();
+
+		$this->assertCount( 1, $models );
+		$this->assertSame( 'gpt-4o', $models[0]->getId() );
+	}
+
+	/**
+	 * Tests that preview models are excluded from the list.
+	 */
+	public function test_preview_models_are_excluded(): void {
+		$this->transporter->set_response_to_return(
+			$this->make_models_response_with_status(
+				array(
+					array( 'id' => 'gpt-4o', 'lifecycle_status' => 'generally-available' ),
+					array( 'id' => 'gpt-4o-preview', 'lifecycle_status' => 'preview' ),
+				)
+			)
+		);
+
+		$models = $this->directory->listModelMetadata();
+
+		$this->assertCount( 1, $models );
+		$this->assertSame( 'gpt-4o', $models[0]->getId() );
+	}
+
+	/**
+	 * Tests that only generally-available models are included when the response contains all statuses.
+	 */
+	public function test_only_generally_available_models_are_returned(): void {
+		$this->transporter->set_response_to_return(
+			$this->make_models_response_with_status(
+				array(
+					array( 'id' => 'gpt-4o', 'lifecycle_status' => 'generally-available' ),
+					array( 'id' => 'dall-e-3', 'lifecycle_status' => 'generally-available' ),
+					array( 'id' => 'gpt-35-turbo', 'lifecycle_status' => 'deprecated' ),
+					array( 'id' => 'gpt-4o-preview', 'lifecycle_status' => 'preview' ),
+				)
+			)
+		);
+
+		$models = $this->directory->listModelMetadata();
+
+		$this->assertCount( 2, $models );
+		$ids = array_map( static function ( $m ) { return $m->getId(); }, $models );
+		$this->assertContains( 'gpt-4o', $ids );
+		$this->assertContains( 'dall-e-3', $ids );
+	}
+
+	/**
+	 * Tests that models without a lifecycle_status field are included (safe fallback).
+	 */
+	public function test_models_without_lifecycle_status_are_included(): void {
+		$this->transporter->set_response_to_return(
+			$this->make_models_response_with_status(
+				array(
+					array( 'id' => 'gpt-4o' ),
+				)
+			)
+		);
+
+		$models = $this->directory->listModelMetadata();
+
+		$this->assertCount( 1, $models );
+		$this->assertSame( 'gpt-4o', $models[0]->getId() );
 	}
 
 	// -----------------------------------------------------------------------
@@ -107,14 +206,14 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 	 */
 	public function test_models_are_sorted_alphabetically(): void {
 		$this->transporter->set_response_to_return(
-			$this->make_models_response( array( 'zmodel', 'amodel' ) )
+			$this->make_models_response( array( 'gpt-4o', 'gpt-35-turbo' ) )
 		);
 
 		$models = $this->directory->listModelMetadata();
 
 		$this->assertCount( 2, $models );
-		$this->assertSame( 'amodel', $models[0]->getId() );
-		$this->assertSame( 'zmodel', $models[1]->getId() );
+		$this->assertSame( 'gpt-35-turbo', $models[0]->getId() );
+		$this->assertSame( 'gpt-4o', $models[1]->getId() );
 	}
 
 	/**
@@ -266,7 +365,17 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 	 * Tests that an o3- prefixed model has text generation capability.
 	 */
 	public function test_o3_model_has_text_generation_capability(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'o3-mini' ) ) );
+		$this->transporter->set_response_to_return(
+			$this->make_models_response_with_status(
+				array(
+					array(
+						'id'               => 'o3-mini',
+						'lifecycle_status' => 'generally-available',
+						'capabilities'     => array( 'chat_completion' => true ),
+					),
+				)
+			)
+		);
 
 		$models = $this->directory->listModelMetadata();
 
@@ -284,7 +393,17 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 	 * Tests that an o4- prefixed model has text generation capability.
 	 */
 	public function test_o4_model_has_text_generation_capability(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'o4-mini' ) ) );
+		$this->transporter->set_response_to_return(
+			$this->make_models_response_with_status(
+				array(
+					array(
+						'id'               => 'o4-mini',
+						'lifecycle_status' => 'generally-available',
+						'capabilities'     => array( 'chat_completion' => true ),
+					),
+				)
+			)
+		);
 
 		$models = $this->directory->listModelMetadata();
 
@@ -299,10 +418,20 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 	}
 
 	/**
-	 * Tests that an unrecognized deployment name falls back to text generation.
+	 * Tests that an unrecognized deployment name with chat_completion capability is included as text generation.
 	 */
-	public function test_unknown_model_name_falls_back_to_text_generation(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'my-custom-deployment' ) ) );
+	public function test_unknown_model_name_with_chat_completion_capability_is_included(): void {
+		$this->transporter->set_response_to_return(
+			$this->make_models_response_with_status(
+				array(
+					array(
+						'id'               => 'my-custom-deployment',
+						'lifecycle_status' => 'generally-available',
+						'capabilities'     => array( 'chat_completion' => true ),
+					),
+				)
+			)
+		);
 
 		$models = $this->directory->listModelMetadata();
 
@@ -314,7 +443,48 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 				break;
 			}
 		}
-		$this->assertTrue( $has_text_gen, 'Unknown deployment name should fall back to text generation' );
+		$this->assertTrue( $has_text_gen, 'Unknown deployment with chat_completion should be included as text generation' );
+	}
+
+	/**
+	 * Tests that an unrecognized deployment name without chat_completion capability is excluded.
+	 */
+	public function test_unknown_model_name_without_chat_completion_capability_is_excluded(): void {
+		$this->transporter->set_response_to_return(
+			$this->make_models_response_with_status(
+				array(
+					array(
+						'id'               => 'my-embedding-model',
+						'lifecycle_status' => 'generally-available',
+						'capabilities'     => array( 'chat_completion' => false ),
+					),
+				)
+			)
+		);
+
+		$models = $this->directory->listModelMetadata();
+
+		$this->assertCount( 0, $models );
+	}
+
+	/**
+	 * Tests that an unrecognized deployment name with no capabilities field is excluded.
+	 */
+	public function test_unknown_model_name_with_no_capabilities_is_excluded(): void {
+		$this->transporter->set_response_to_return(
+			$this->make_models_response_with_status(
+				array(
+					array(
+						'id'               => 'my-unknown-model',
+						'lifecycle_status' => 'generally-available',
+					),
+				)
+			)
+		);
+
+		$models = $this->directory->listModelMetadata();
+
+		$this->assertCount( 0, $models );
 	}
 
 	// -----------------------------------------------------------------------
