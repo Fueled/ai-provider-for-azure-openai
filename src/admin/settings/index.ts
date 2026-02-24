@@ -1,11 +1,15 @@
 /**
  * WordPress dependencies
  */
-import apiFetch from '@wordpress/api-fetch';
-import { __, _n, sprintf } from '@wordpress/i18n';
+import { __ } from '@wordpress/i18n';
+
+interface ModelTypeMap {
+	[ key: string ]: string;
+}
 
 interface Config {
-	ajaxUrl: string;
+	modelTypes: ModelTypeMap;
+	nextIndex: number;
 }
 
 declare global {
@@ -14,118 +18,126 @@ declare global {
 	}
 }
 
-interface AjaxResponse {
-	success: boolean;
-	data: ModelMetadata[] | string;
-}
-
-interface ModelMetadata {
-	id: string;
-	name: string;
-}
-
-const ERROR_COLOR = '#d63638';
+const OPTION_NAME = 'wp_ai_client_azure_openai_settings';
 
 /**
- * Loads and displays the available models in a list.
+ * Creates a type <select> element for a new deployment row.
  *
- * @param config The configuration object.
+ * @param modelTypes Map of type key to display label.
+ * @param index      Row index used for the input name.
  * @since 1.0.0
  */
-async function loadModels( config: Config ): Promise< void > {
-	const container = document.getElementById(
-		'azure-openai-models-container'
-	);
-	const status = document.getElementById( 'azure-openai-model-status' );
+function createTypeSelect(
+	modelTypes: ModelTypeMap,
+	index: number
+): HTMLSelectElement {
+	const select = document.createElement( 'select' );
+	select.name = `${ OPTION_NAME }[deployments][${ index }][type]`;
 
-	if ( ! container || ! status ) {
-		return;
+	for ( const [ value, label ] of Object.entries( modelTypes ) ) {
+		const option = document.createElement( 'option' );
+		option.value = value;
+		option.textContent = label;
+		select.appendChild( option );
 	}
 
-	status.textContent = __(
-		'Loading models\u2026',
-		'ai-provider-for-azure-openai'
-	);
-
-	let resp: AjaxResponse;
-
-	try {
-		resp = await apiFetch< AjaxResponse >( { url: config.ajaxUrl } );
-	} catch ( error ) {
-		const fallback = __(
-			'Could not connect to load models.',
-			'ai-provider-for-azure-openai'
-		);
-		status.textContent =
-			error !== null &&
-			typeof error === 'object' &&
-			'message' in error &&
-			typeof ( error as { message: unknown } ).message === 'string'
-				? ( error as { message: string } ).message
-				: fallback;
-		status.style.color = ERROR_COLOR;
-		return;
-	}
-
-	if ( ! resp.success || ! resp.data ) {
-		status.textContent =
-			typeof resp.data === 'string'
-				? resp.data
-				: __(
-						'Failed to load models.',
-						'ai-provider-for-azure-openai'
-				  );
-		status.style.color = ERROR_COLOR;
-		return;
-	}
-
-	const models = resp.data as ModelMetadata[];
-
-	// Clear the container (removes the status span).
-	container.innerHTML = '';
-
-	if ( models.length === 0 ) {
-		const empty = document.createElement( 'p' );
-		empty.textContent = __(
-			'No models found. Ensure your Azure OpenAI resource has deployed models and the endpoint URL is correct.',
-			'ai-provider-for-azure-openai'
-		);
-		container.appendChild( empty );
-		return;
-	}
-
-	const count = document.createElement( 'p' );
-	count.textContent = sprintf(
-		/* translators: %d: number of models */
-		_n(
-			'%d model available:',
-			'%d models available:',
-			models.length,
-			'ai-provider-for-azure-openai'
-		),
-		models.length
-	);
-	container.appendChild( count );
-
-	const list = document.createElement( 'ul' );
-	for ( const model of models ) {
-		const item = document.createElement( 'li' );
-		const code = document.createElement( 'code' );
-		code.textContent = model.id;
-		item.appendChild( code );
-		list.appendChild( item );
-	}
-	container.appendChild( list );
+	return select;
 }
 
 /**
- * Initializes the settings page.
+ * Creates a new empty deployment table row.
+ *
+ * @param modelTypes Map of type key to display label.
+ * @param index      Row index used for input names.
+ * @since 1.0.0
+ */
+function createRow(
+	modelTypes: ModelTypeMap,
+	index: number
+): HTMLTableRowElement {
+	const tr = document.createElement( 'tr' );
+
+	// Deployment name cell.
+	const nameTd = document.createElement( 'td' );
+	const nameInput = document.createElement( 'input' );
+	nameInput.type = 'text';
+	nameInput.name = `${ OPTION_NAME }[deployments][${ index }][name]`;
+	nameInput.className = 'regular-text';
+	nameInput.placeholder = __(
+		'e.g. my-gpt4o',
+		'ai-provider-for-azure-openai'
+	);
+	nameTd.appendChild( nameInput );
+	tr.appendChild( nameTd );
+
+	// Model type cell.
+	const typeTd = document.createElement( 'td' );
+	typeTd.appendChild( createTypeSelect( modelTypes, index ) );
+	tr.appendChild( typeTd );
+
+	// Remove button cell.
+	const removeTd = document.createElement( 'td' );
+	const removeBtn = document.createElement( 'button' );
+	removeBtn.type = 'button';
+	removeBtn.className = 'button azure-openai-remove-deployment';
+	removeBtn.textContent = __( 'Remove', 'ai-provider-for-azure-openai' );
+	removeTd.appendChild( removeBtn );
+	tr.appendChild( removeTd );
+
+	return tr;
+}
+
+/**
+ * Initializes the settings page interactivity.
+ *
+ * The table and existing rows are rendered by PHP. This function attaches
+ * the Add Deployment and Remove button handlers.
  *
  * @since 1.0.0
  */
 document.addEventListener( 'DOMContentLoaded', () => {
 	const config = window.wpAiClientAzureOpenAISettings;
-	if ( config ) {
-		loadModels( config );
+	if ( ! config ) {
+		return;
 	}
+
+	const tbody = document.getElementById(
+		'azure-openai-deployments-tbody'
+	) as HTMLTableSectionElement | null;
+	const addBtn = document.getElementById(
+		'azure-openai-add-deployment'
+	) as HTMLButtonElement | null;
+
+	if ( ! tbody || ! addBtn ) {
+		return;
+	}
+
+	// Start the index counter after PHP-rendered rows to avoid name conflicts.
+	let rowIndex = config.nextIndex;
+
+	const table = tbody.closest( 'table' ) as HTMLElement | null;
+
+	// Event delegation: handle Remove button clicks anywhere in the tbody.
+	tbody.addEventListener( 'click', ( event ) => {
+		const target = event.target as HTMLElement;
+		if ( target.classList.contains( 'azure-openai-remove-deployment' ) ) {
+			const row = target.closest( 'tr' );
+			if ( row ) {
+				row.remove();
+				// Hide the table again once the last row is removed.
+				if ( table && tbody.rows.length === 0 ) {
+					table.style.display = 'none';
+				}
+			}
+		}
+	} );
+
+	// Add Deployment button appends a new empty row.
+	addBtn.addEventListener( 'click', () => {
+		// Reveal the table when adding the first row.
+		if ( table && table.style.display === 'none' ) {
+			table.style.display = '';
+		}
+		tbody.appendChild( createRow( config.modelTypes, rowIndex++ ) );
+	} );
 } );

@@ -34,7 +34,8 @@ class AzureOpenAISettingsTest extends \WP_UnitTestCase {
 	 */
 	public function test_sanitize_settings_with_valid_endpoint_url(): void {
 		$result = $this->settings->sanitize_settings( array( 'endpoint' => 'https://myresource.openai.azure.com' ) );
-		$this->assertSame( array( 'endpoint' => 'https://myresource.openai.azure.com' ), $result );
+		$this->assertSame( 'https://myresource.openai.azure.com', $result['endpoint'] );
+		$this->assertArrayHasKey( 'deployments', $result );
 	}
 
 	/**
@@ -113,16 +114,97 @@ class AzureOpenAISettingsTest extends \WP_UnitTestCase {
 		);
 	}
 
+	// -----------------------------------------------------------------------
+	// Deployment sanitization tests
+	// -----------------------------------------------------------------------
+
 	/**
-	 * Tests that init() registers ajax_list_models on the AJAX action hook.
+	 * Tests that a valid deployments array is saved as-is.
 	 */
-	public function test_init_registers_ajax_hook(): void {
-		$this->settings->init();
-		$this->assertNotFalse(
-			has_action(
-				'wp_ajax_wp_ai_client_azure_openai_list_models',
-				array( $this->settings, 'ajax_list_models' )
+	public function test_sanitize_settings_saves_valid_deployments_array(): void {
+		$result = $this->settings->sanitize_settings(
+			array(
+				'endpoint'    => 'https://myresource.openai.azure.com',
+				'deployments' => array(
+					array( 'name' => 'my-gpt4o', 'type' => 'chat_multimodal' ),
+					array( 'name' => 'my-dall-e', 'type' => 'image_dalle' ),
+				),
 			)
 		);
+
+		$this->assertArrayHasKey( 'deployments', $result );
+		$this->assertCount( 2, $result['deployments'] );
+		$this->assertSame( 'my-gpt4o', $result['deployments'][0]['name'] );
+		$this->assertSame( 'chat_multimodal', $result['deployments'][0]['type'] );
+		$this->assertSame( 'my-dall-e', $result['deployments'][1]['name'] );
+		$this->assertSame( 'image_dalle', $result['deployments'][1]['type'] );
+	}
+
+	/**
+	 * Tests that blank deployment names are stripped from the saved array.
+	 */
+	public function test_sanitize_settings_strips_blank_deployment_names(): void {
+		$result = $this->settings->sanitize_settings(
+			array(
+				'deployments' => array(
+					array( 'name' => '', 'type' => 'chat' ),
+					array( 'name' => 'valid-name', 'type' => 'chat' ),
+					array( 'name' => '   ', 'type' => 'chat' ),
+				),
+			)
+		);
+
+		$this->assertCount( 1, $result['deployments'] );
+		$this->assertSame( 'valid-name', $result['deployments'][0]['name'] );
+	}
+
+	/**
+	 * Tests that an invalid deployment type defaults to 'chat'.
+	 */
+	public function test_sanitize_settings_invalid_deployment_type_defaults_to_chat(): void {
+		$result = $this->settings->sanitize_settings(
+			array(
+				'deployments' => array(
+					array( 'name' => 'my-deployment', 'type' => 'invalid_type' ),
+				),
+			)
+		);
+
+		$this->assertCount( 1, $result['deployments'] );
+		$this->assertSame( 'chat', $result['deployments'][0]['type'] );
+	}
+
+	/**
+	 * Tests that a non-array deployments value results in an empty deployments array.
+	 */
+	public function test_sanitize_settings_non_array_deployments_becomes_empty_array(): void {
+		$result = $this->settings->sanitize_settings(
+			array(
+				'endpoint'    => 'https://myresource.openai.azure.com',
+				'deployments' => 'not-an-array',
+			)
+		);
+
+		$this->assertArrayHasKey( 'deployments', $result );
+		$this->assertSame( array(), $result['deployments'] );
+	}
+
+	/**
+	 * Tests that all valid deployment types are accepted without defaulting.
+	 */
+	public function test_sanitize_settings_all_valid_types_are_accepted(): void {
+		$valid_types = array( 'chat', 'chat_multimodal', 'image_dalle', 'image_gpt', 'tts' );
+		$deployments = array();
+
+		foreach ( $valid_types as $type ) {
+			$deployments[] = array( 'name' => 'deploy-' . $type, 'type' => $type );
+		}
+
+		$result = $this->settings->sanitize_settings( array( 'deployments' => $deployments ) );
+
+		$this->assertCount( 5, $result['deployments'] );
+		foreach ( $result['deployments'] as $index => $deployment ) {
+			$this->assertSame( $valid_types[ $index ], $deployment['type'] );
+		}
 	}
 }

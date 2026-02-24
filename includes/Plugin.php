@@ -15,6 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 use Fueled\AiProviderForAzureOpenAI\Auth\AzureApiKeyRequestAuthentication;
+use Fueled\AiProviderForAzureOpenAI\Metadata\AzureOpenAIModelMetadataDirectory;
 use Fueled\AiProviderForAzureOpenAI\Provider\AzureOpenAIProvider;
 use Fueled\AiProviderForAzureOpenAI\Settings\AzureOpenAISettings;
 use WordPress\AiClient\AiClient;
@@ -68,6 +69,19 @@ class Plugin {
 	}
 
 	/**
+	 * Sets the deployments configuration from the WordPress option.
+	 *
+	 * @since 1.0.0
+	 */
+	private function set_deployments_from_option(): void {
+		$settings    = get_option( 'wp_ai_client_azure_openai_settings', array() );
+		$deployments = isset( $settings['deployments'] ) && is_array( $settings['deployments'] )
+			? $settings['deployments']
+			: array();
+		AzureOpenAIModelMetadataDirectory::setDeployments( $deployments );
+	}
+
+	/**
 	 * Registers the Azure OpenAI provider with the AI Client.
 	 *
 	 * @since 1.0.0
@@ -78,6 +92,7 @@ class Plugin {
 		}
 
 		$this->set_azure_endpoint_from_option();
+		$this->set_deployments_from_option();
 
 		$registry = AiClient::defaultRegistry();
 

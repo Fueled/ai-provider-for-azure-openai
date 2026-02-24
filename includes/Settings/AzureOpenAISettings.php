@@ -14,13 +14,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-use WordPress\AiClient\AiClient;
-
 /**
  * Class for the Azure OpenAI settings in the WordPress admin.
  *
  * Provides a settings page under Settings > Azure OpenAI Settings for
- * configuring the Azure OpenAI resource endpoint URL.
+ * configuring the Azure OpenAI resource endpoint URL and deployments.
  *
  * @since 1.0.0
  */
@@ -30,8 +28,6 @@ class AzureOpenAISettings {
 	private const OPTION_NAME  = 'wp_ai_client_azure_openai_settings';
 	private const PAGE_SLUG    = 'wp-ai-client-azure-openai';
 	private const SECTION_ID   = 'wp_ai_client_azure_openai_main';
-	private const AJAX_ACTION  = 'wp_ai_client_azure_openai_list_models';
-	private const NONCE_ACTION = 'wp_ai_client_azure_openai_nonce';
 
 	/**
 	 * Initializes the settings.
@@ -42,7 +38,6 @@ class AzureOpenAISettings {
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_menu', array( $this, 'register_settings_screen' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_settings_script' ) );
-		add_action( 'wp_ajax_' . self::AJAX_ACTION, array( $this, 'ajax_list_models' ) );
 	}
 
 	/**
@@ -78,12 +73,11 @@ class AzureOpenAISettings {
 		);
 
 		add_settings_field(
-			self::OPTION_NAME . '_models',
-			__( 'Available Models', 'ai-provider-for-azure-openai' ),
-			array( $this, 'render_available_models_field' ),
+			self::OPTION_NAME . '_deployments',
+			__( 'Deployments', 'ai-provider-for-azure-openai' ),
+			array( $this, 'render_deployments_field' ),
 			self::PAGE_SLUG,
-			self::SECTION_ID,
-			array( 'label_for' => self::OPTION_NAME . '-models' )
+			self::SECTION_ID
 		);
 	}
 
@@ -108,7 +102,7 @@ class AzureOpenAISettings {
 	 * @since 1.0.0
 	 *
 	 * @param mixed $value The input value.
-	 * @return array<string, string> The sanitized settings.
+	 * @return array<string, mixed> The sanitized settings.
 	 */
 	public function sanitize_settings( $value ): array {
 		if ( ! is_array( $value ) ) {
@@ -120,8 +114,37 @@ class AzureOpenAISettings {
 			$endpoint = rtrim( esc_url_raw( $endpoint ), '/' );
 		}
 
+		$allowed_types = array( 'chat', 'chat_multimodal', 'image_dalle', 'image_gpt', 'tts' );
+		$deployments   = array();
+
+		if ( isset( $value['deployments'] ) && is_array( $value['deployments'] ) ) {
+			foreach ( $value['deployments'] as $deployment ) {
+				if ( ! is_array( $deployment ) ) {
+					continue;
+				}
+
+				$name = isset( $deployment['name'] ) ? sanitize_text_field( (string) $deployment['name'] ) : '';
+
+				if ( '' === $name ) {
+					continue;
+				}
+
+				$type = isset( $deployment['type'] ) ? sanitize_key( (string) $deployment['type'] ) : 'chat';
+
+				if ( ! in_array( $type, $allowed_types, true ) ) {
+					$type = 'chat';
+				}
+
+				$deployments[] = array(
+					'name' => $name,
+					'type' => $type,
+				);
+			}
+		}
+
 		return array(
-			'endpoint' => $endpoint,
+			'endpoint'    => $endpoint,
+			'deployments' => $deployments,
 		);
 	}
 
@@ -207,20 +230,93 @@ class AzureOpenAISettings {
 	}
 
 	/**
-	 * Renders the available models list.
+	 * Returns the model type labels for the deployments select field.
 	 *
-	 * @since 1.0.0
+	 * @since n.e.x.t
+	 *
+	 * @return array<string, string> Map of type key to display label.
 	 */
-	public function render_available_models_field(): void {
+	private function get_model_type_labels(): array {
+		return array(
+			'chat'            => __( 'Chat (Text Generation)', 'ai-provider-for-azure-openai' ),
+			'chat_multimodal' => __( 'Chat + Vision (Multimodal)', 'ai-provider-for-azure-openai' ),
+			'image_dalle'     => __( 'Image Generation (DALL-E)', 'ai-provider-for-azure-openai' ),
+			'image_gpt'       => __( 'Image Generation (GPT Image)', 'ai-provider-for-azure-openai' ),
+			'tts'             => __( 'Text-to-Speech', 'ai-provider-for-azure-openai' ),
+		);
+	}
+
+	/**
+	 * Renders the deployments table with any saved deployments pre-populated.
+	 *
+	 * JavaScript on this page handles adding and removing rows interactively.
+	 *
+	 * @since n.e.x.t
+	 */
+	public function render_deployments_field(): void {
+		$settings    = get_option( self::OPTION_NAME, array() );
+		$raw_deps    = is_array( $settings ) && isset( $settings['deployments'] ) && is_array( $settings['deployments'] )
+			? $settings['deployments']
+			: array();
+		$model_types = $this->get_model_type_labels();
+
+		// Pre-process into typed rows to keep template logic minimal.
+		$deployments = array();
+		foreach ( $raw_deps as $dep ) {
+			if ( ! is_array( $dep ) ) {
+				continue;
+			}
+
+			$deployments[] = array(
+				'name' => isset( $dep['name'] ) ? (string) $dep['name'] : '',
+				'type' => isset( $dep['type'] ) ? (string) $dep['type'] : 'chat',
+			);
+		}
+		$table_style = empty( $deployments )
+			? 'display: none;'
+			: '';
 		?>
 
-		<div id="azure-openai-models-container">
-			<span id="azure-openai-model-status"></span>
+		<div style="max-width: 570px;">
+			<table class="widefat striped" style="<?php echo esc_attr( $table_style ); ?>">
+				<thead>
+					<tr>
+						<th style="padding-left: 15px;"><?php esc_html_e( 'Deployment Name', 'ai-provider-for-azure-openai' ); ?></th>
+						<th style="padding-left: 15px;"><?php esc_html_e( 'Model Type', 'ai-provider-for-azure-openai' ); ?></th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody id="azure-openai-deployments-tbody">
+					<?php foreach ( $deployments as $index => $dep ) : ?>
+					<tr>
+						<td>
+							<input
+								type="text"
+								name="<?php echo esc_attr( self::OPTION_NAME . '[deployments][' . $index . '][name]' ); ?>"
+								value="<?php echo esc_attr( $dep['name'] ); ?>"
+								class="regular-text"
+							/>
+						</td>
+						<td>
+							<select name="<?php echo esc_attr( self::OPTION_NAME . '[deployments][' . $index . '][type]' ); ?>">
+								<?php foreach ( $model_types as $type_key => $type_label ) : ?>
+								<option value="<?php echo esc_attr( $type_key ); ?>" <?php selected( $dep['type'], $type_key ); ?>><?php echo esc_html( $type_label ); ?></option>
+								<?php endforeach; ?>
+							</select>
+						</td>
+						<td>
+							<button type="button" class="button azure-openai-remove-deployment"><?php esc_html_e( 'Remove', 'ai-provider-for-azure-openai' ); ?></button>
+						</td>
+					</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
 		</div>
+		<button type="button" id="azure-openai-add-deployment" class="button button-secondary" style="margin-top: 8px;">
+			<?php esc_html_e( 'Add Deployment', 'ai-provider-for-azure-openai' ); ?>
+		</button>
 		<p class="description">
-			<?php
-			echo esc_html__( 'Available models are auto-discovered from your Azure OpenAI resource. Models are listed by their deployment name.', 'ai-provider-for-azure-openai' );
-			?>
+			<?php echo esc_html__( 'Add each deployment name and select its model type. The deployment name is the one you chose when creating the deployment in Azure.', 'ai-provider-for-azure-openai' ); ?>
 		</p>
 
 		<?php
@@ -253,51 +349,18 @@ class AzureOpenAISettings {
 			true
 		);
 
+		$settings = get_option( self::OPTION_NAME, array() );
+		$raw_deps = is_array( $settings ) && isset( $settings['deployments'] ) && is_array( $settings['deployments'] )
+			? $settings['deployments']
+			: array();
+
 		wp_localize_script(
 			'wp-ai-client-azure-openai-settings',
 			'wpAiClientAzureOpenAISettings',
 			array(
-				'ajaxUrl' => esc_url( admin_url( 'admin-ajax.php' ) . '?action=' . self::AJAX_ACTION . '&_wpnonce=' . wp_create_nonce( self::NONCE_ACTION ) ),
+				'modelTypes' => $this->get_model_type_labels(),
+				'nextIndex'  => count( $raw_deps ),
 			)
 		);
-	}
-
-	/**
-	 * Handles the AJAX request to list available Azure OpenAI models.
-	 *
-	 * @since 1.0.0
-	 */
-	public function ajax_list_models(): void {
-		check_ajax_referer( self::NONCE_ACTION );
-
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( __( 'Insufficient permissions.', 'ai-provider-for-azure-openai' ), 403 );
-		}
-
-		$provider_id = 'azure-openai';
-		$registry    = AiClient::defaultRegistry();
-
-		if ( ! $registry->hasProvider( $provider_id ) ) {
-			wp_send_json_error( __( 'AI provider not found.', 'ai-provider-for-azure-openai' ), 404 );
-		}
-
-		$provider_classname = $registry->getProviderClassName( $provider_id );
-
-		try {
-			// phpcs:ignore Generic.Commenting.DocComment.MissingShort
-			$provider_availability = $provider_classname::availability();
-			if ( ! $provider_availability->isConfigured() ) {
-				wp_send_json_error( __( 'AI provider not configured — enter an endpoint URL and save settings first.', 'ai-provider-for-azure-openai' ), 400 );
-			}
-
-			// phpcs:ignore Generic.Commenting.DocComment.MissingShort
-			$model_metadata_directory = $provider_classname::modelMetadataDirectory();
-			$model_metadata_objects   = $model_metadata_directory->listModelMetadata();
-
-			wp_send_json_success( $model_metadata_objects );
-		} catch ( \Throwable $e ) {
-			/* translators: %s: Error message. */
-			wp_send_json_error( sprintf( __( 'Could not list models for provider — are the endpoint URL and API key correct? Error: %s', 'ai-provider-for-azure-openai' ), $e->getMessage() ), 500 );
-		}
 	}
 }

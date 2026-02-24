@@ -5,17 +5,13 @@ declare( strict_types=1 );
 namespace Fueled\AiProviderForAzureOpenAI\Tests\Integration\Metadata;
 
 use Fueled\AiProviderForAzureOpenAI\Metadata\AzureOpenAIModelMetadataDirectory;
-use Fueled\AiProviderForAzureOpenAI\Tests\Integration\Mocks\MockHttpTransporter;
 use PHPUnit\Framework\TestCase;
-use WordPress\AiClient\Providers\Http\DTO\ApiKeyRequestAuthentication;
-use WordPress\AiClient\Providers\Http\DTO\Response;
-use WordPress\AiClient\Providers\Http\Exception\ResponseException;
+use WordPress\AiClient\Common\Exception\InvalidArgumentException;
 
 /**
  * Tests for AzureOpenAIModelMetadataDirectory.
  *
- * Uses a MockHttpTransporter with a pre-configured response matching the
- * Azure OpenAI v1 /models response shape.
+ * Uses static deployment configuration rather than HTTP discovery.
  *
  * @covers \Fueled\AiProviderForAzureOpenAI\Metadata\AzureOpenAIModelMetadataDirectory
  */
@@ -28,68 +24,24 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 	 */
 	private AzureOpenAIModelMetadataDirectory $directory;
 
-	/**
-	 * Shared mock transporter (fresh instance per test).
-	 *
-	 * @var MockHttpTransporter
-	 */
-	private MockHttpTransporter $transporter;
-
 	protected function setUp(): void {
 		parent::setUp();
-		putenv( 'AZURE_OPENAI_ENDPOINT=https://myresource.openai.azure.com' );
-		$this->transporter = new MockHttpTransporter();
-		$this->directory   = new AzureOpenAIModelMetadataDirectory();
-		$this->directory->setHttpTransporter( $this->transporter );
-		$this->directory->setRequestAuthentication( new ApiKeyRequestAuthentication( 'test-key' ) );
+		$this->directory = new AzureOpenAIModelMetadataDirectory();
 	}
 
 	protected function tearDown(): void {
-		putenv( 'AZURE_OPENAI_ENDPOINT' );
+		AzureOpenAIModelMetadataDirectory::setDeployments( array() );
 		parent::tearDown();
 	}
 
 	// -----------------------------------------------------------------------
-	// Response helpers
+	// Helper
 	// -----------------------------------------------------------------------
-
-	/**
-	 * Builds a fake /models 200 response containing the given model IDs.
-	 *
-	 * All models are set to 'generally-available' by default.
-	 *
-	 * @param list<string> $model_ids The model IDs (deployment names) to include.
-	 * @return \WordPress\AiClient\Providers\Http\DTO\Response
-	 */
-	private function make_models_response( array $model_ids ): Response {
-		$data = array_map(
-			static function ( string $id ): array {
-				return array(
-					'id'               => $id,
-					'lifecycle_status' => 'generally-available',
-				);
-			},
-			$model_ids
-		);
-		$body = (string) json_encode( array( 'data' => $data ) );
-		return new Response( 200, array(), $body );
-	}
-
-	/**
-	 * Builds a fake /models 200 response with explicit lifecycle statuses per model.
-	 *
-	 * @param list<array{id: string, lifecycle_status: string}> $models Model data with id and lifecycle_status.
-	 * @return \WordPress\AiClient\Providers\Http\DTO\Response
-	 */
-	private function make_models_response_with_status( array $models ): Response {
-		$body = (string) json_encode( array( 'data' => $models ) );
-		return new Response( 200, array(), $body );
-	}
 
 	/**
 	 * Finds a SupportedOption by its is* method name, or returns null if not found.
 	 *
-	 * @param list<\WordPress\AiClient\Providers\Models\DTO\SupportedOption> $options         Supported options.
+	 * @param list<\WordPress\AiClient\Providers\Models\DTO\SupportedOption> $options        Supported options.
 	 * @param string                                                          $is_method_name The is* method name (e.g. 'isInputModalities').
 	 * @return \WordPress\AiClient\Providers\Models\DTO\SupportedOption|null
 	 */
@@ -103,59 +55,25 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 	}
 
 	// -----------------------------------------------------------------------
-	// Lifecycle status filtering tests
+	// Basic listing tests
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Tests that deprecated models are excluded from the list.
+	 * Tests that listModelMetadata() returns an empty array when no deployments are configured.
 	 */
-	public function test_deprecated_models_are_excluded(): void {
-		$this->transporter->set_response_to_return(
-			$this->make_models_response_with_status(
-				array(
-					array( 'id' => 'gpt-4o', 'lifecycle_status' => 'generally-available' ),
-					array( 'id' => 'gpt-35-turbo', 'lifecycle_status' => 'deprecated' ),
-				)
-			)
-		);
-
+	public function test_returns_empty_array_when_no_deployments_configured(): void {
 		$models = $this->directory->listModelMetadata();
-
-		$this->assertCount( 1, $models );
-		$this->assertSame( 'gpt-4o', $models[0]->getId() );
+		$this->assertSame( array(), $models );
 	}
 
 	/**
-	 * Tests that preview models are excluded from the list.
+	 * Tests that listModelMetadata() returns models from the configured deployments.
 	 */
-	public function test_preview_models_are_excluded(): void {
-		$this->transporter->set_response_to_return(
-			$this->make_models_response_with_status(
-				array(
-					array( 'id' => 'gpt-4o', 'lifecycle_status' => 'generally-available' ),
-					array( 'id' => 'gpt-4o-preview', 'lifecycle_status' => 'preview' ),
-				)
-			)
-		);
-
-		$models = $this->directory->listModelMetadata();
-
-		$this->assertCount( 1, $models );
-		$this->assertSame( 'gpt-4o', $models[0]->getId() );
-	}
-
-	/**
-	 * Tests that only generally-available models are included when the response contains all statuses.
-	 */
-	public function test_only_generally_available_models_are_returned(): void {
-		$this->transporter->set_response_to_return(
-			$this->make_models_response_with_status(
-				array(
-					array( 'id' => 'gpt-4o', 'lifecycle_status' => 'generally-available' ),
-					array( 'id' => 'dall-e-3', 'lifecycle_status' => 'generally-available' ),
-					array( 'id' => 'gpt-35-turbo', 'lifecycle_status' => 'deprecated' ),
-					array( 'id' => 'gpt-4o-preview', 'lifecycle_status' => 'preview' ),
-				)
+	public function test_returns_models_from_configured_deployments(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-gpt4o', 'type' => 'chat' ),
+				array( 'name' => 'my-dall-e', 'type' => 'image_dalle' ),
 			)
 		);
 
@@ -163,136 +81,109 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 
 		$this->assertCount( 2, $models );
 		$ids = array_map( static function ( $m ) { return $m->getId(); }, $models );
-		$this->assertContains( 'gpt-4o', $ids );
-		$this->assertContains( 'dall-e-3', $ids );
+		$this->assertContains( 'my-gpt4o', $ids );
+		$this->assertContains( 'my-dall-e', $ids );
 	}
 
 	/**
-	 * Tests that models without a lifecycle_status field are included (safe fallback).
+	 * Tests that blank deployment names are skipped.
 	 */
-	public function test_models_without_lifecycle_status_are_included(): void {
-		$this->transporter->set_response_to_return(
-			$this->make_models_response_with_status(
-				array(
-					array( 'id' => 'gpt-4o' ),
-				)
+	public function test_blank_deployment_names_are_skipped(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => '', 'type' => 'chat' ),
+				array( 'name' => 'valid-name', 'type' => 'chat' ),
+				array( 'name' => '   ', 'type' => 'chat' ),
 			)
 		);
 
 		$models = $this->directory->listModelMetadata();
 
 		$this->assertCount( 1, $models );
-		$this->assertSame( 'gpt-4o', $models[0]->getId() );
-	}
-
-	// -----------------------------------------------------------------------
-	// Basic listing tests
-	// -----------------------------------------------------------------------
-
-	/**
-	 * Tests that listModelMetadata() returns models parsed from the API response.
-	 */
-	public function test_returns_models_from_api(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'gpt-4o' ) ) );
-
-		$models = $this->directory->listModelMetadata();
-
-		$this->assertCount( 1, $models );
-		$this->assertSame( 'gpt-4o', $models[0]->getId() );
+		$this->assertSame( 'valid-name', $models[0]->getId() );
 	}
 
 	/**
-	 * Tests that returned models are sorted alphabetically by model ID.
+	 * Tests that the model display name matches the deployment name.
 	 */
-	public function test_models_are_sorted_alphabetically(): void {
-		$this->transporter->set_response_to_return(
-			$this->make_models_response( array( 'gpt-4o', 'gpt-35-turbo' ) )
+	public function test_model_display_name_matches_deployment_name(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-custom-deployment', 'type' => 'chat' ),
+			)
 		);
 
 		$models = $this->directory->listModelMetadata();
 
-		$this->assertCount( 2, $models );
-		$this->assertSame( 'gpt-35-turbo', $models[0]->getId() );
-		$this->assertSame( 'gpt-4o', $models[1]->getId() );
-	}
-
-	/**
-	 * Tests that the model display name matches the model ID.
-	 */
-	public function test_model_display_name_matches_id(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'gpt-4o' ) ) );
-
-		$models = $this->directory->listModelMetadata();
-
-		$this->assertSame( 'gpt-4o', $models[0]->getName() );
+		$this->assertSame( 'my-custom-deployment', $models[0]->getName() );
 	}
 
 	// -----------------------------------------------------------------------
-	// Capability detection tests
+	// Chat deployment capability tests
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Tests that a dall-e model is detected as an image generation model.
+	 * Tests that a chat deployment has textGeneration and chatHistory capabilities.
 	 */
-	public function test_dall_e_model_has_image_generation_capability(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'dall-e-3' ) ) );
+	public function test_chat_deployment_has_text_generation_and_chat_history_capabilities(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-chat', 'type' => 'chat' ),
+			)
+		);
 
 		$models = $this->directory->listModelMetadata();
+		$caps   = $models[0]->getSupportedCapabilities();
 
-		$this->assertCount( 1, $models );
-		$caps = $models[0]->getSupportedCapabilities();
-		$this->assertCount( 1, $caps );
-		$this->assertTrue( $caps[0]->isImageGeneration() );
+		$has_text_gen   = false;
+		$has_chat_history = false;
+		foreach ( $caps as $cap ) {
+			if ( $cap->isTextGeneration() ) {
+				$has_text_gen = true;
+			}
+			if ( $cap->isChatHistory() ) {
+				$has_chat_history = true;
+			}
+		}
+
+		$this->assertTrue( $has_text_gen, 'Expected textGeneration capability' );
+		$this->assertTrue( $has_chat_history, 'Expected chatHistory capability' );
 	}
 
 	/**
-	 * Tests that a gpt-image model is detected as an image generation model.
+	 * Tests that a chat deployment has text-only input modality (1 combination).
 	 */
-	public function test_gpt_image_model_has_image_generation_capability(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'gpt-image-1' ) ) );
+	public function test_chat_deployment_has_text_only_input_modality(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-chat', 'type' => 'chat' ),
+			)
+		);
 
-		$models = $this->directory->listModelMetadata();
+		$models              = $this->directory->listModelMetadata();
+		$input_modalities_opt = $this->find_option( $models[0]->getSupportedOptions(), 'isInputModalities' );
 
-		$caps = $models[0]->getSupportedCapabilities();
-		$this->assertCount( 1, $caps );
-		$this->assertTrue( $caps[0]->isImageGeneration() );
+		$this->assertNotNull( $input_modalities_opt, 'Expected inputModalities option' );
+		$this->assertCount( 1, (array) $input_modalities_opt->getSupportedValues() );
 	}
 
-	/**
-	 * Tests that a tts- prefixed model is detected as a TTS model.
-	 */
-	public function test_tts_prefix_model_has_tts_capability(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'tts-1' ) ) );
-
-		$models = $this->directory->listModelMetadata();
-
-		$caps = $models[0]->getSupportedCapabilities();
-		$this->assertCount( 1, $caps );
-		$this->assertTrue( $caps[0]->isTextToSpeechConversion() );
-	}
+	// -----------------------------------------------------------------------
+	// Chat multimodal deployment capability tests
+	// -----------------------------------------------------------------------
 
 	/**
-	 * Tests that a model with -tts suffix is detected as a TTS model.
+	 * Tests that a chat_multimodal deployment has textGeneration capability.
 	 */
-	public function test_tts_suffix_model_has_tts_capability(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'gpt-4o-mini-tts' ) ) );
+	public function test_chat_multimodal_deployment_has_text_generation_capability(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-multimodal', 'type' => 'chat_multimodal' ),
+			)
+		);
 
 		$models = $this->directory->listModelMetadata();
+		$caps   = $models[0]->getSupportedCapabilities();
 
-		$caps = $models[0]->getSupportedCapabilities();
-		$this->assertCount( 1, $caps );
-		$this->assertTrue( $caps[0]->isTextToSpeechConversion() );
-	}
-
-	/**
-	 * Tests that a gpt-4o model has text generation capability.
-	 */
-	public function test_gpt4o_model_has_text_generation_capability(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'gpt-4o' ) ) );
-
-		$models = $this->directory->listModelMetadata();
-
-		$caps = $models[0]->getSupportedCapabilities();
 		$has_text_gen = false;
 		foreach ( $caps as $cap ) {
 			if ( $cap->isTextGeneration() ) {
@@ -300,290 +191,170 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 				break;
 			}
 		}
+
 		$this->assertTrue( $has_text_gen );
 	}
 
 	/**
-	 * Tests that a gpt-4o model gets multimodal input modalities (5 combinations).
+	 * Tests that a chat_multimodal deployment has 5 input modality combinations.
 	 */
-	public function test_gpt4o_model_has_multimodal_input_modalities(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'gpt-4o' ) ) );
+	public function test_chat_multimodal_deployment_has_multimodal_input_modalities(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-multimodal', 'type' => 'chat_multimodal' ),
+			)
+		);
 
 		$models              = $this->directory->listModelMetadata();
 		$input_modalities_opt = $this->find_option( $models[0]->getSupportedOptions(), 'isInputModalities' );
 
-		$this->assertNotNull( $input_modalities_opt, 'Expected inputModalities supported option' );
-		// gpt-4o: text, text+image, text+image+audio, text+document, text+image+document.
+		$this->assertNotNull( $input_modalities_opt, 'Expected inputModalities option' );
+		// text, text+image, text+image+audio, text+document, text+image+document.
 		$this->assertCount( 5, (array) $input_modalities_opt->getSupportedValues() );
 	}
 
-	/**
-	 * Tests that a gpt-4o-mini model also gets multimodal input modalities.
-	 */
-	public function test_gpt4o_mini_model_has_multimodal_input_modalities(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'gpt-4o-mini' ) ) );
-
-		$models              = $this->directory->listModelMetadata();
-		$input_modalities_opt = $this->find_option( $models[0]->getSupportedOptions(), 'isInputModalities' );
-
-		$this->assertNotNull( $input_modalities_opt );
-		$this->assertCount( 5, (array) $input_modalities_opt->getSupportedValues() );
-	}
+	// -----------------------------------------------------------------------
+	// Image deployment capability tests
+	// -----------------------------------------------------------------------
 
 	/**
-	 * Tests that a gpt-3.5 model has text-only input modalities (not multimodal).
+	 * Tests that an image_dalle deployment has imageGeneration capability.
 	 */
-	public function test_gpt35_model_has_text_only_input_modalities(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'gpt-35-turbo' ) ) );
-
-		$models              = $this->directory->listModelMetadata();
-		$input_modalities_opt = $this->find_option( $models[0]->getSupportedOptions(), 'isInputModalities' );
-
-		$this->assertNotNull( $input_modalities_opt, 'Expected inputModalities supported option' );
-		$this->assertCount( 1, (array) $input_modalities_opt->getSupportedValues() );
-	}
-
-	/**
-	 * Tests that an o1- prefixed model has text generation capability.
-	 */
-	public function test_o1_model_has_text_generation_capability(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'o1-mini' ) ) );
+	public function test_image_dalle_deployment_has_image_generation_capability(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-dalle', 'type' => 'image_dalle' ),
+			)
+		);
 
 		$models = $this->directory->listModelMetadata();
+		$caps   = $models[0]->getSupportedCapabilities();
+
+		$this->assertCount( 1, $caps );
+		$this->assertTrue( $caps[0]->isImageGeneration() );
+	}
+
+	/**
+	 * Tests that an image_gpt deployment has imageGeneration capability.
+	 */
+	public function test_image_gpt_deployment_has_image_generation_capability(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-gpt-image', 'type' => 'image_gpt' ),
+			)
+		);
+
+		$models = $this->directory->listModelMetadata();
+		$caps   = $models[0]->getSupportedCapabilities();
+
+		$this->assertCount( 1, $caps );
+		$this->assertTrue( $caps[0]->isImageGeneration() );
+	}
+
+	// -----------------------------------------------------------------------
+	// TTS deployment capability tests
+	// -----------------------------------------------------------------------
+
+	/**
+	 * Tests that a tts deployment has textToSpeechConversion capability.
+	 */
+	public function test_tts_deployment_has_tts_capability(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-tts', 'type' => 'tts' ),
+			)
+		);
+
+		$models = $this->directory->listModelMetadata();
+		$caps   = $models[0]->getSupportedCapabilities();
+
+		$this->assertCount( 1, $caps );
+		$this->assertTrue( $caps[0]->isTextToSpeechConversion() );
+	}
+
+	// -----------------------------------------------------------------------
+	// hasModelMetadata() tests
+	// -----------------------------------------------------------------------
+
+	/**
+	 * Tests that hasModelMetadata() returns true for a configured deployment.
+	 */
+	public function test_has_model_metadata_returns_true_for_configured_deployment(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-gpt4o', 'type' => 'chat' ),
+			)
+		);
+
+		$this->assertTrue( $this->directory->hasModelMetadata( 'my-gpt4o' ) );
+	}
+
+	/**
+	 * Tests that hasModelMetadata() returns false for an unconfigured deployment.
+	 */
+	public function test_has_model_metadata_returns_false_for_unconfigured_deployment(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-gpt4o', 'type' => 'chat' ),
+			)
+		);
+
+		$this->assertFalse( $this->directory->hasModelMetadata( 'nonexistent' ) );
+	}
+
+	// -----------------------------------------------------------------------
+	// getModelMetadata() tests
+	// -----------------------------------------------------------------------
+
+	/**
+	 * Tests that getModelMetadata() returns the correct metadata for a configured deployment.
+	 */
+	public function test_get_model_metadata_returns_correct_metadata(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-gpt4o', 'type' => 'chat' ),
+			)
+		);
+
+		$metadata = $this->directory->getModelMetadata( 'my-gpt4o' );
+
+		$this->assertSame( 'my-gpt4o', $metadata->getId() );
+		$this->assertSame( 'my-gpt4o', $metadata->getName() );
+	}
+
+	/**
+	 * Tests that getModelMetadata() throws an exception for an unconfigured deployment.
+	 */
+	public function test_get_model_metadata_throws_for_unconfigured_deployment(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->directory->getModelMetadata( 'nonexistent' );
+	}
+
+	// -----------------------------------------------------------------------
+	// Default type fallback test
+	// -----------------------------------------------------------------------
+
+	/**
+	 * Tests that an unknown deployment type falls back to the chat (text generation) type.
+	 */
+	public function test_unknown_type_falls_back_to_chat(): void {
+		AzureOpenAIModelMetadataDirectory::setDeployments(
+			array(
+				array( 'name' => 'my-deployment', 'type' => 'unknown_type' ),
+			)
+		);
+
+		$models = $this->directory->listModelMetadata();
+		$caps   = $models[0]->getSupportedCapabilities();
 
 		$has_text_gen = false;
-		foreach ( $models[0]->getSupportedCapabilities() as $cap ) {
+		foreach ( $caps as $cap ) {
 			if ( $cap->isTextGeneration() ) {
 				$has_text_gen = true;
 				break;
 			}
 		}
-		$this->assertTrue( $has_text_gen );
-	}
 
-	/**
-	 * Tests that an o3- prefixed model has text generation capability.
-	 */
-	public function test_o3_model_has_text_generation_capability(): void {
-		$this->transporter->set_response_to_return(
-			$this->make_models_response_with_status(
-				array(
-					array(
-						'id'               => 'o3-mini',
-						'lifecycle_status' => 'generally-available',
-						'capabilities'     => array( 'chat_completion' => true ),
-					),
-				)
-			)
-		);
-
-		$models = $this->directory->listModelMetadata();
-
-		$has_text_gen = false;
-		foreach ( $models[0]->getSupportedCapabilities() as $cap ) {
-			if ( $cap->isTextGeneration() ) {
-				$has_text_gen = true;
-				break;
-			}
-		}
-		$this->assertTrue( $has_text_gen );
-	}
-
-	/**
-	 * Tests that an o4- prefixed model has text generation capability.
-	 */
-	public function test_o4_model_has_text_generation_capability(): void {
-		$this->transporter->set_response_to_return(
-			$this->make_models_response_with_status(
-				array(
-					array(
-						'id'               => 'o4-mini',
-						'lifecycle_status' => 'generally-available',
-						'capabilities'     => array( 'chat_completion' => true ),
-					),
-				)
-			)
-		);
-
-		$models = $this->directory->listModelMetadata();
-
-		$has_text_gen = false;
-		foreach ( $models[0]->getSupportedCapabilities() as $cap ) {
-			if ( $cap->isTextGeneration() ) {
-				$has_text_gen = true;
-				break;
-			}
-		}
-		$this->assertTrue( $has_text_gen );
-	}
-
-	/**
-	 * Tests that an unrecognized deployment name with chat_completion capability is included as text generation.
-	 */
-	public function test_unknown_model_name_with_chat_completion_capability_is_included(): void {
-		$this->transporter->set_response_to_return(
-			$this->make_models_response_with_status(
-				array(
-					array(
-						'id'               => 'my-custom-deployment',
-						'lifecycle_status' => 'generally-available',
-						'capabilities'     => array( 'chat_completion' => true ),
-					),
-				)
-			)
-		);
-
-		$models = $this->directory->listModelMetadata();
-
-		$this->assertCount( 1, $models );
-		$has_text_gen = false;
-		foreach ( $models[0]->getSupportedCapabilities() as $cap ) {
-			if ( $cap->isTextGeneration() ) {
-				$has_text_gen = true;
-				break;
-			}
-		}
-		$this->assertTrue( $has_text_gen, 'Unknown deployment with chat_completion should be included as text generation' );
-	}
-
-	/**
-	 * Tests that an unrecognized deployment name without chat_completion capability is excluded.
-	 */
-	public function test_unknown_model_name_without_chat_completion_capability_is_excluded(): void {
-		$this->transporter->set_response_to_return(
-			$this->make_models_response_with_status(
-				array(
-					array(
-						'id'               => 'my-embedding-model',
-						'lifecycle_status' => 'generally-available',
-						'capabilities'     => array( 'chat_completion' => false ),
-					),
-				)
-			)
-		);
-
-		$models = $this->directory->listModelMetadata();
-
-		$this->assertCount( 0, $models );
-	}
-
-	/**
-	 * Tests that an unrecognized deployment name with no capabilities field is excluded.
-	 */
-	public function test_unknown_model_name_with_no_capabilities_is_excluded(): void {
-		$this->transporter->set_response_to_return(
-			$this->make_models_response_with_status(
-				array(
-					array(
-						'id'               => 'my-unknown-model',
-						'lifecycle_status' => 'generally-available',
-					),
-				)
-			)
-		);
-
-		$models = $this->directory->listModelMetadata();
-
-		$this->assertCount( 0, $models );
-	}
-
-	// -----------------------------------------------------------------------
-	// Error handling tests
-	// -----------------------------------------------------------------------
-
-	/**
-	 * Tests that a response missing the 'data' key throws a ResponseException.
-	 */
-	public function test_missing_data_key_throws_exception(): void {
-		$this->transporter->set_response_to_return(
-			new Response( 200, array(), (string) json_encode( array( 'not_data' => array() ) ) )
-		);
-
-		$this->expectException( ResponseException::class );
-		$this->directory->listModelMetadata();
-	}
-
-	/**
-	 * Tests that an empty 'data' array throws a ResponseException.
-	 */
-	public function test_empty_data_array_throws_exception(): void {
-		$this->transporter->set_response_to_return(
-			new Response( 200, array(), (string) json_encode( array( 'data' => array() ) ) )
-		);
-
-		$this->expectException( ResponseException::class );
-		$this->directory->listModelMetadata();
-	}
-
-	/**
-	 * Tests that a failed /models request propagates the exception.
-	 */
-	public function test_failed_models_request_throws_exception(): void {
-		$this->transporter->set_response_to_return(
-			new Response( 401, array(), '{"error":"Unauthorized"}' )
-		);
-
-		$this->expectException( \Throwable::class );
-		$this->directory->listModelMetadata();
-	}
-
-	// -----------------------------------------------------------------------
-	// Options completeness tests
-	// -----------------------------------------------------------------------
-
-	/**
-	 * Tests that all standard text generation options are present on a GPT model.
-	 */
-	public function test_all_standard_gpt_options_are_present(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'gpt-4o' ) ) );
-
-		$models = $this->directory->listModelMetadata();
-		$this->assertCount( 1, $models );
-
-		$option_names = array_map(
-			static function ( $opt ): string {
-				return (string) $opt->getName();
-			},
-			$models[0]->getSupportedOptions()
-		);
-
-		$expected_options = array(
-			'systemInstruction',
-			'candidateCount',
-			'maxTokens',
-			'temperature',
-			'topP',
-			'stopSequences',
-			'presencePenalty',
-			'frequencyPenalty',
-			'outputMimeType',
-			'outputSchema',
-			'functionDeclarations',
-			'webSearch',
-			'customOptions',
-			'inputModalities',
-			'outputModalities',
-		);
-
-		foreach ( $expected_options as $expected ) {
-			$this->assertContains(
-				$expected,
-				$option_names,
-				sprintf( 'Expected option "%s" to be present in model metadata', $expected )
-			);
-		}
-	}
-
-	/**
-	 * Tests that the request is sent to the correct Azure /models endpoint.
-	 */
-	public function test_request_is_sent_to_correct_endpoint(): void {
-		$this->transporter->set_response_to_return( $this->make_models_response( array( 'gpt-4o' ) ) );
-
-		$this->directory->listModelMetadata();
-
-		$last_request = $this->transporter->get_last_request();
-		$this->assertNotNull( $last_request );
-		$this->assertStringContainsString( '/openai/v1/models', $last_request->getUri() );
+		$this->assertTrue( $has_text_gen, 'Unknown type should fall back to chat (textGeneration)' );
 	}
 }
