@@ -18,9 +18,9 @@ use Fueled\AiProviderForAzureOpenAI\Auth\AzureApiKeyRequestAuthentication;
 use Fueled\AiProviderForAzureOpenAI\Metadata\AzureOpenAIModelMetadataDirectory;
 use Fueled\AiProviderForAzureOpenAI\Provider\AzureOpenAIProvider;
 use Fueled\AiProviderForAzureOpenAI\Settings\AzureOpenAISettings;
+use WordPress\AI_Client\HTTP\WP_AI_Client_Discovery_Strategy;
 use WordPress\AiClient\AiClient;
 use WordPress\AiClient\Providers\Http\DTO\ApiKeyRequestAuthentication;
-use WordPress\AiClient\Providers\Http\HttpTransporterFactory;
 
 /**
  * Plugin initializer class.
@@ -36,8 +36,7 @@ class Plugin {
 	 */
 	public function init(): void {
 		add_action( 'init', array( $this, 'register_provider' ), 5 );
-		add_action( 'init', array( $this, 'ensure_http_transporter' ), 15 );
-		add_action( 'init', array( $this, 'convert_auth_to_azure' ), 20 );
+		add_action( 'init', array( $this, 'convert_auth_to_azure' ), 15 );
 		add_action( 'init', array( $this, 'initialize_settings' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( AI_PROVIDER_FOR_AZURE_OPENAI_PLUGIN_FILE ), array( $this, 'plugin_action_links' ) );
 	}
@@ -91,6 +90,11 @@ class Plugin {
 			return;
 		}
 
+		// Ensure the HTTP transporter is initialized.
+		if ( class_exists( WP_AI_Client_Discovery_Strategy::class ) ) {
+			WP_AI_Client_Discovery_Strategy::init();
+		}
+
 		$this->set_azure_endpoint_from_option();
 		$this->set_deployments_from_option();
 
@@ -101,33 +105,6 @@ class Plugin {
 		}
 
 		$registry->registerProvider( AzureOpenAIProvider::class );
-	}
-
-	/**
-	 * Ensures the HTTP transporter is set on the registry.
-	 *
-	 * Providers register at priority 5, before the WordPress PSR-18 HTTP
-	 * client discovery strategy is available (registered at priority 10 by
-	 * wp-ai-client). This method runs at priority 15 to trigger transporter
-	 * creation after the strategy is in place.
-	 *
-	 * @since 1.0.0
-	 */
-	public function ensure_http_transporter(): void {
-		if ( ! class_exists( AiClient::class ) ) {
-			return;
-		}
-
-		$registry = AiClient::defaultRegistry();
-
-		try {
-			$registry->getHttpTransporter();
-		} catch ( \Throwable $e ) {
-			try {
-				$registry->setHttpTransporter( HttpTransporterFactory::createTransporter() );
-			} catch ( \Throwable $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- Graceful degradation when no PSR-18 client is available.
-			}
-		}
 	}
 
 	/**
