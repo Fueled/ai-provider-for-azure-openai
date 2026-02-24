@@ -14,9 +14,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+use Fueled\AiProviderForAzureOpenAI\Auth\AzureApiKeyRequestAuthentication;
 use Fueled\AiProviderForAzureOpenAI\Provider\AzureOpenAIProvider;
 use Fueled\AiProviderForAzureOpenAI\Settings\AzureOpenAISettings;
 use WordPress\AiClient\AiClient;
+use WordPress\AiClient\Providers\Http\DTO\ApiKeyRequestAuthentication;
 use WordPress\AiClient\Providers\Http\HttpTransporterFactory;
 
 /**
@@ -34,8 +36,35 @@ class Plugin {
 	public function init(): void {
 		add_action( 'init', array( $this, 'register_provider' ), 5 );
 		add_action( 'init', array( $this, 'ensure_http_transporter' ), 15 );
+		add_action( 'init', array( $this, 'convert_auth_to_azure' ), 20 );
 		add_action( 'init', array( $this, 'initialize_settings' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( AI_PROVIDER_FOR_AZURE_OPENAI_PLUGIN_FILE ), array( $this, 'plugin_action_links' ) );
+	}
+
+	/**
+	 * Sets the AZURE_OPENAI_ENDPOINT environment variable from the WordPress option.
+	 *
+	 * @since 1.0.0
+	 */
+	private function set_azure_endpoint_from_option(): void {
+		// Check if the AZURE_OPENAI_ENDPOINT environment variable is already set.
+		$env_endpoint = getenv( 'AZURE_OPENAI_ENDPOINT' );
+		if ( false !== $env_endpoint && '' !== $env_endpoint ) {
+			return;
+		}
+
+		// Get the Azure OpenAI endpoint from the WordPress option.
+		$settings = get_option( 'wp_ai_client_azure_openai_settings', array() );
+		if (
+			! is_array( $settings ) ||
+			! isset( $settings['endpoint'] ) ||
+			'' === $settings['endpoint']
+		) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.runtime_configuration_putenv -- Required to set AZURE_OPENAI_ENDPOINT for the provider SDK.
+		putenv( 'AZURE_OPENAI_ENDPOINT=' . $settings['endpoint'] );
 	}
 
 	/**
@@ -47,6 +76,8 @@ class Plugin {
 		if ( ! class_exists( AiClient::class ) ) {
 			return;
 		}
+
+		$this->set_azure_endpoint_from_option();
 
 		$registry = AiClient::defaultRegistry();
 
@@ -82,6 +113,43 @@ class Plugin {
 			} catch ( \Throwable $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- Graceful degradation when no PSR-18 client is available.
 			}
 		}
+	}
+
+	/**
+	 * Swaps the standard Bearer-token authentication for Azure's `api-key` header authentication.
+	 *
+	 * Runs at priority 20, after wp-ai-client sets credentials at priority 10. Replaces a
+	 * standard ApiKeyRequestAuthentication (which sends `Authorization: Bearer`) with
+	 * AzureApiKeyRequestAuthentication (which sends `api-key: <key>`), so existing
+	 * credential management in wp-ai-client works without modification.
+	 *
+	 * @since 1.0.0
+	 */
+	public function convert_auth_to_azure(): void {
+		if ( ! class_exists( AiClient::class ) ) {
+			return;
+		}
+
+		$registry = AiClient::defaultRegistry();
+
+		if ( ! $registry->hasProvider( 'azure-openai' ) ) {
+			return;
+		}
+
+		$auth = $registry->getProviderRequestAuthentication( 'azure-openai' );
+		if ( ! $auth instanceof ApiKeyRequestAuthentication ) {
+			return;
+		}
+
+		// Only convert if not already using Azure-specific authentication.
+		if ( $auth instanceof AzureApiKeyRequestAuthentication ) {
+			return;
+		}
+
+		$registry->setProviderRequestAuthentication(
+			'azure-openai',
+			new AzureApiKeyRequestAuthentication( $auth->getApiKey() )
+		);
 	}
 
 	/**
