@@ -92,23 +92,12 @@ class PluginTest extends \WP_UnitTestCase {
 	}
 
 	/**
-	 * Tests that init() registers ensure_http_transporter at priority 15 on the init hook.
+	 * Tests that init() registers convert_auth_to_azure at priority 15 on the init hook.
 	 */
-	public function test_init_registers_ensure_http_transporter_at_priority_15(): void {
+	public function test_init_registers_convert_auth_to_azure_at_priority_15(): void {
 		$this->plugin->init();
 		$this->assertSame(
 			15,
-			has_action( 'init', array( $this->plugin, 'ensure_http_transporter' ) )
-		);
-	}
-
-	/**
-	 * Tests that init() registers convert_auth_to_azure at priority 20 on the init hook.
-	 */
-	public function test_init_registers_convert_auth_to_azure_at_priority_20(): void {
-		$this->plugin->init();
-		$this->assertSame(
-			20,
 			has_action( 'init', array( $this->plugin, 'convert_auth_to_azure' ) )
 		);
 	}
