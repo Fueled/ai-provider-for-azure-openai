@@ -26,5 +26,11 @@ parameters:
 		analyse:
 			- tests/
 			- vendor/
+			# Temporary: WP 7.0 beta core AI Client symbols are not fully discoverable by PHPStan here.
+			- includes/Auth/
+			- includes/Metadata/
+			- includes/Models/
+			- includes/Provider/
+			- includes/Plugin.php
 		analyseAndScan:
 			- node_modules (?)
