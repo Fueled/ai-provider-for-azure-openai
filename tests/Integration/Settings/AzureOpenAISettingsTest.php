@@ -23,6 +23,12 @@ class AzureOpenAISettingsTest extends \WP_UnitTestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$this->settings = new AzureOpenAISettings();
+		delete_option( 'wp_ai_client_azure_openai_settings' );
+	}
+
+	protected function tearDown(): void {
+		delete_option( 'wp_ai_client_azure_openai_settings' );
+		parent::tearDown();
 	}
 
 	// -----------------------------------------------------------------------
@@ -206,5 +212,43 @@ class AzureOpenAISettingsTest extends \WP_UnitTestCase {
 		foreach ( $result['deployments'] as $index => $deployment ) {
 			$this->assertSame( $valid_types[ $index ], $deployment['type'] );
 		}
+	}
+
+	/**
+	 * Tests that get_settings() returns saved settings as an array.
+	 */
+	public function test_get_settings_returns_saved_option(): void {
+		$saved_settings = array(
+			'endpoint'    => 'https://myresource.openai.azure.com',
+			'deployments' => array(
+				array(
+					'name' => 'my-gpt4o',
+					'type' => 'chat',
+				),
+			),
+		);
+		update_option( 'wp_ai_client_azure_openai_settings', $saved_settings );
+
+		$this->assertSame( $saved_settings, AzureOpenAISettings::get_settings() );
+	}
+
+	/**
+	 * Tests that render_screen() links to the Connectors admin screen.
+	 */
+	public function test_render_screen_outputs_connectors_screen_link(): void {
+		$admin_user_id = self::factory()->user->create(
+			array(
+				'role' => 'administrator',
+			)
+		);
+		wp_set_current_user( $admin_user_id );
+		$GLOBALS['title'] = 'Azure OpenAI Settings';
+
+		ob_start();
+		$this->settings->render_screen();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'options-general.php?page=connectors-wp-admin', $output );
+		wp_set_current_user( 0 );
 	}
 }
