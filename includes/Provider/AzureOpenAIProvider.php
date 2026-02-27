@@ -83,7 +83,7 @@ class AzureOpenAIProvider extends AbstractApiProvider {
 			'Azure OpenAI',
 			ProviderTypeEnum::cloud(),
 			'https://portal.azure.com',
-			class_exists( RequestAuthenticationMethod::class ) ? RequestAuthenticationMethod::apiKey() : null
+			RequestAuthenticationMethod::apiKey()
 		);
 	}
 

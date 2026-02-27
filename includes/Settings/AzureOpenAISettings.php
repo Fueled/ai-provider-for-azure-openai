@@ -165,8 +165,8 @@ class AzureOpenAISettings {
 				<?php
 				printf(
 					/* translators: 1: link to the AI Credentials screen, 2: closing link tag */
-					esc_html__( 'Configure the connection to your Azure OpenAI resource. Enter the resource endpoint URL below, then add your API key on the %1$sSettings > AI Credentials%2$s screen.', 'ai-provider-for-azure-openai' ),
-					'<a href="' . esc_url( admin_url( 'options-general.php?page=wp-ai-client' ) ) . '">',
+					esc_html__( 'Configure the connection to your Azure OpenAI resource. Enter the resource endpoint URL below, then add your API key to the %1$sSettings > Connectors%2$s screen.', 'ai-provider-for-azure-openai' ),
+					'<a href="' . esc_url( admin_url( 'options-general.php?page=connectors-wp-admin' ) ) . '">',
 					'</a>'
 				);
 				?>
@@ -199,12 +199,8 @@ class AzureOpenAISettings {
 	 * @since 1.0.0
 	 */
 	public function render_endpoint_field(): void {
-		$settings = get_option( self::OPTION_NAME, array() );
-		if ( ! is_array( $settings ) ) {
-			$settings = array();
-		}
-
-		$value = isset( $settings['endpoint'] ) ? $settings['endpoint'] : '';
+		$settings = self::get_settings();
+		$value    = isset( $settings['endpoint'] ) ? $settings['endpoint'] : '';
 		?>
 
 		<input
@@ -232,7 +228,7 @@ class AzureOpenAISettings {
 	/**
 	 * Returns the model type labels for the deployments select field.
 	 *
-	 * @since n.e.x.t
+	 * @since 1.0.0
 	 *
 	 * @return array<string, string> Map of type key to display label.
 	 */
@@ -251,11 +247,11 @@ class AzureOpenAISettings {
 	 *
 	 * JavaScript on this page handles adding and removing rows interactively.
 	 *
-	 * @since n.e.x.t
+	 * @since 1.0.0
 	 */
 	public function render_deployments_field(): void {
-		$settings    = get_option( self::OPTION_NAME, array() );
-		$raw_deps    = is_array( $settings ) && isset( $settings['deployments'] ) && is_array( $settings['deployments'] )
+		$settings    = self::get_settings();
+		$raw_deps    = isset( $settings['deployments'] ) && is_array( $settings['deployments'] )
 			? $settings['deployments']
 			: array();
 		$model_types = $this->get_model_type_labels();
@@ -349,8 +345,8 @@ class AzureOpenAISettings {
 			true
 		);
 
-		$settings = get_option( self::OPTION_NAME, array() );
-		$raw_deps = is_array( $settings ) && isset( $settings['deployments'] ) && is_array( $settings['deployments'] )
+		$settings = self::get_settings();
+		$raw_deps = isset( $settings['deployments'] ) && is_array( $settings['deployments'] )
 			? $settings['deployments']
 			: array();
 
@@ -362,5 +358,16 @@ class AzureOpenAISettings {
 				'nextIndex'  => count( $raw_deps ),
 			)
 		);
+	}
+
+	/**
+	 * Gets the settings.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @return array<string, mixed> The settings.
+	 */
+	public static function get_settings(): array {
+		return (array) get_option( self::OPTION_NAME, array() );
 	}
 }

@@ -18,7 +18,6 @@ use Fueled\AiProviderForAzureOpenAI\Auth\AzureApiKeyRequestAuthentication;
 use Fueled\AiProviderForAzureOpenAI\Metadata\AzureOpenAIModelMetadataDirectory;
 use Fueled\AiProviderForAzureOpenAI\Provider\AzureOpenAIProvider;
 use Fueled\AiProviderForAzureOpenAI\Settings\AzureOpenAISettings;
-use WordPress\AI_Client\HTTP\WP_AI_Client_Discovery_Strategy;
 use WordPress\AiClient\AiClient;
 use WordPress\AiClient\Providers\Http\DTO\ApiKeyRequestAuthentication;
 
@@ -42,11 +41,11 @@ class Plugin {
 	}
 
 	/**
-	 * Sets the AZURE_OPENAI_ENDPOINT environment variable from the WordPress option.
+	 * Sets the AZURE_OPENAI_ENDPOINT environment variable.
 	 *
 	 * @since 1.0.0
 	 */
-	private function set_azure_endpoint_from_option(): void {
+	private function set_azure_endpoint(): void {
 		// Check if the AZURE_OPENAI_ENDPOINT environment variable is already set.
 		$env_endpoint = getenv( 'AZURE_OPENAI_ENDPOINT' );
 		if ( false !== $env_endpoint && '' !== $env_endpoint ) {
@@ -54,12 +53,8 @@ class Plugin {
 		}
 
 		// Get the Azure OpenAI endpoint from the WordPress option.
-		$settings = get_option( 'wp_ai_client_azure_openai_settings', array() );
-		if (
-			! is_array( $settings ) ||
-			! isset( $settings['endpoint'] ) ||
-			'' === $settings['endpoint']
-		) {
+		$settings = AzureOpenAISettings::get_settings();
+		if ( ! isset( $settings['endpoint'] ) || '' === $settings['endpoint'] ) {
 			return;
 		}
 
@@ -68,12 +63,12 @@ class Plugin {
 	}
 
 	/**
-	 * Sets the deployments configuration from the WordPress option.
+	 * Sets the deployments configuration.
 	 *
 	 * @since 1.0.0
 	 */
-	private function set_deployments_from_option(): void {
-		$settings    = get_option( 'wp_ai_client_azure_openai_settings', array() );
+	private function set_deployments(): void {
+		$settings    = AzureOpenAISettings::get_settings();
 		$deployments = isset( $settings['deployments'] ) && is_array( $settings['deployments'] )
 			? $settings['deployments']
 			: array();
@@ -90,13 +85,8 @@ class Plugin {
 			return;
 		}
 
-		// Ensure the HTTP transporter is initialized.
-		if ( class_exists( WP_AI_Client_Discovery_Strategy::class ) ) {
-			WP_AI_Client_Discovery_Strategy::init();
-		}
-
-		$this->set_azure_endpoint_from_option();
-		$this->set_deployments_from_option();
+		$this->set_azure_endpoint();
+		$this->set_deployments();
 
 		$registry = AiClient::defaultRegistry();
 
