@@ -209,8 +209,7 @@ class AzureOpenAIModelMetadataDirectoryTest extends TestCase {
 		$input_modalities_opt = $this->find_option( $models[0]->getSupportedOptions(), 'isInputModalities' );
 
 		$this->assertNotNull( $input_modalities_opt, 'Expected inputModalities option' );
-		// text, text+image, text+image+audio, text+document, text+image+document.
-		$this->assertCount( 5, (array) $input_modalities_opt->getSupportedValues() );
+		$this->assertCount( 8, (array) $input_modalities_opt->getSupportedValues() );
 	}
 
 	// -----------------------------------------------------------------------
