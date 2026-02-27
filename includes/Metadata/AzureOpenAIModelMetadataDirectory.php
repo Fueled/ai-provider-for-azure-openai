@@ -239,9 +239,12 @@ class AzureOpenAIModelMetadataDirectory implements ModelMetadataDirectoryInterfa
 				array(
 					array( ModalityEnum::text() ),
 					array( ModalityEnum::text(), ModalityEnum::image() ),
-					array( ModalityEnum::text(), ModalityEnum::image(), ModalityEnum::audio() ),
+					array( ModalityEnum::text(), ModalityEnum::audio() ),
 					array( ModalityEnum::text(), ModalityEnum::document() ),
+					array( ModalityEnum::text(), ModalityEnum::image(), ModalityEnum::audio() ),
 					array( ModalityEnum::text(), ModalityEnum::image(), ModalityEnum::document() ),
+					array( ModalityEnum::text(), ModalityEnum::audio(), ModalityEnum::document() ),
+					array( ModalityEnum::text(), ModalityEnum::image(), ModalityEnum::audio(), ModalityEnum::document() ),
 				)
 			),
 			new SupportedOption( OptionEnum::outputModalities(), array( array( ModalityEnum::text() ) ) ),
