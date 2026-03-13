@@ -38,7 +38,7 @@ Because Azure OpenAI uses deployment-based model access, this provider lets you 
 2. Upload the plugin files to `/wp-content/plugins/ai-provider-for-azure-openai/`.
 3. Activate the plugin through the 'Plugins' menu in WordPress.
 4. Go to **Settings > Azure OpenAI Settings** to configure your endpoint URL and deployments.
-5. Enter your API key on the **Settings > AI Credentials** screen under the `azure-openai` provider.
+5. Enter your API key on the **Settings > AI Credentials** screen under the `azure_openai` provider.
 
 == Frequently Asked Questions ==
 

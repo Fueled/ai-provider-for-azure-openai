@@ -126,7 +126,7 @@ class AzureOpenAIProviderTest extends TestCase {
 	 */
 	public function test_metadata_has_correct_provider_id(): void {
 		$metadata = AzureOpenAIProvider::metadata();
-		$this->assertSame( 'azure-openai', $metadata->getId() );
+		$this->assertSame( 'azure_openai', $metadata->getId() );
 	}
 
 	/**

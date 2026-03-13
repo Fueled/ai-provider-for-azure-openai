@@ -114,11 +114,11 @@ class Plugin {
 
 		$registry = AiClient::defaultRegistry();
 
-		if ( ! $registry->hasProvider( 'azure-openai' ) ) {
+		if ( ! $registry->hasProvider( 'azure_openai' ) ) {
 			return;
 		}
 
-		$auth = $registry->getProviderRequestAuthentication( 'azure-openai' );
+		$auth = $registry->getProviderRequestAuthentication( 'azure_openai' );
 		if ( ! $auth instanceof ApiKeyRequestAuthentication ) {
 			return;
 		}
@@ -129,7 +129,7 @@ class Plugin {
 		}
 
 		$registry->setProviderRequestAuthentication(
-			'azure-openai',
+			'azure_openai',
 			new AzureApiKeyRequestAuthentication( $auth->getApiKey() )
 		);
 	}

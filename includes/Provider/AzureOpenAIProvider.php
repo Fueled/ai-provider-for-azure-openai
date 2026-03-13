@@ -13,6 +13,7 @@ namespace Fueled\AiProviderForAzureOpenAI\Provider;
 use Fueled\AiProviderForAzureOpenAI\Metadata\AzureOpenAIModelMetadataDirectory;
 use Fueled\AiProviderForAzureOpenAI\Models\AzureOpenAIImageGenerationModel;
 use Fueled\AiProviderForAzureOpenAI\Models\AzureOpenAITextGenerationModel;
+use WordPress\AiClient\AiClient;
 use WordPress\AiClient\Common\Exception\RuntimeException;
 use WordPress\AiClient\Providers\ApiBasedImplementation\AbstractApiProvider;
 use WordPress\AiClient\Providers\Contracts\ModelMetadataDirectoryInterface;
@@ -78,13 +79,29 @@ class AzureOpenAIProvider extends AbstractApiProvider {
 	 * @since 1.0.0
 	 */
 	protected static function createProviderMetadata(): ProviderMetadata {
-		return new ProviderMetadata(
-			'azure-openai',
+		$provider_meta = array(
+			'azure_openai',
 			'Azure OpenAI',
 			ProviderTypeEnum::cloud(),
 			'https://portal.azure.com',
-			RequestAuthenticationMethod::apiKey()
+			RequestAuthenticationMethod::apiKey(),
 		);
+
+		// Provider description support was added in 1.2.0.
+		if ( version_compare( AiClient::VERSION, '1.2.0', '>=' ) ) {
+			if ( function_exists( '__' ) ) {
+				$provider_meta[] = __( 'Text and image generation with your own Azure OpenAI resource.', 'ai-provider-for-azure-openai' );
+			} else {
+				$provider_meta[] = 'Text and image generation with your own Azure OpenAI resource.';
+			}
+		}
+
+		// Provider logo path support was added in 1.3.0.
+		if ( version_compare( AiClient::VERSION, '1.3.0', '>=' ) ) {
+			$provider_meta[] = __DIR__ . '/logo.svg';
+		}
+
+		return new ProviderMetadata( ...$provider_meta );
 	}
 
 	/**

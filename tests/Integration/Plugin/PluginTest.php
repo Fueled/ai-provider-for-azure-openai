@@ -117,12 +117,12 @@ class PluginTest extends \WP_UnitTestCase {
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Tests that register_provider() registers the azure-openai provider with the registry.
+	 * Tests that register_provider() registers the azure_openai provider with the registry.
 	 */
 	public function test_register_provider_registers_azure_openai_with_registry(): void {
 		$this->reset_registry();
 		$this->plugin->register_provider();
-		$this->assertTrue( AiClient::defaultRegistry()->hasProvider( 'azure-openai' ) );
+		$this->assertTrue( AiClient::defaultRegistry()->hasProvider( 'azure_openai' ) );
 	}
 
 	/**
@@ -156,7 +156,7 @@ class PluginTest extends \WP_UnitTestCase {
 		$this->reset_registry();
 		$this->plugin->register_provider();
 		$this->plugin->register_provider(); // Second call should be a no-op.
-		$this->assertTrue( AiClient::defaultRegistry()->hasProvider( 'azure-openai' ) );
+		$this->assertTrue( AiClient::defaultRegistry()->hasProvider( 'azure_openai' ) );
 	}
 
 	// -----------------------------------------------------------------------
@@ -172,11 +172,11 @@ class PluginTest extends \WP_UnitTestCase {
 
 		$registry  = AiClient::defaultRegistry();
 		$standard_auth = new ApiKeyRequestAuthentication( 'my-api-key' );
-		$registry->setProviderRequestAuthentication( 'azure-openai', $standard_auth );
+		$registry->setProviderRequestAuthentication( 'azure_openai', $standard_auth );
 
 		$this->plugin->convert_auth_to_azure();
 
-		$auth = $registry->getProviderRequestAuthentication( 'azure-openai' );
+		$auth = $registry->getProviderRequestAuthentication( 'azure_openai' );
 		$this->assertInstanceOf( AzureApiKeyRequestAuthentication::class, $auth );
 	}
 
@@ -189,13 +189,13 @@ class PluginTest extends \WP_UnitTestCase {
 
 		$registry = AiClient::defaultRegistry();
 		$registry->setProviderRequestAuthentication(
-			'azure-openai',
+			'azure_openai',
 			new ApiKeyRequestAuthentication( 'original-key' )
 		);
 
 		$this->plugin->convert_auth_to_azure();
 
-		$auth = $registry->getProviderRequestAuthentication( 'azure-openai' );
+		$auth = $registry->getProviderRequestAuthentication( 'azure_openai' );
 		$this->assertInstanceOf( AzureApiKeyRequestAuthentication::class, $auth );
 		$this->assertSame( 'original-key', $auth->getApiKey() );
 	}
@@ -209,11 +209,11 @@ class PluginTest extends \WP_UnitTestCase {
 
 		$registry     = AiClient::defaultRegistry();
 		$azure_auth = new AzureApiKeyRequestAuthentication( 'azure-key' );
-		$registry->setProviderRequestAuthentication( 'azure-openai', $azure_auth );
+		$registry->setProviderRequestAuthentication( 'azure_openai', $azure_auth );
 
 		$this->plugin->convert_auth_to_azure();
 
-		$auth = $registry->getProviderRequestAuthentication( 'azure-openai' );
+		$auth = $registry->getProviderRequestAuthentication( 'azure_openai' );
 		$this->assertSame( $azure_auth, $auth );
 	}
 
@@ -226,6 +226,6 @@ class PluginTest extends \WP_UnitTestCase {
 
 		// Should not throw.
 		$this->plugin->convert_auth_to_azure();
-		$this->assertFalse( AiClient::defaultRegistry()->hasProvider( 'azure-openai' ) );
+		$this->assertFalse( AiClient::defaultRegistry()->hasProvider( 'azure_openai' ) );
 	}
 }

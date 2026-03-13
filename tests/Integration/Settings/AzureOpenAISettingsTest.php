@@ -248,7 +248,7 @@ class AzureOpenAISettingsTest extends \WP_UnitTestCase {
 		$this->settings->render_screen();
 		$output = (string) ob_get_clean();
 
-		$this->assertStringContainsString( 'options-general.php?page=connectors-wp-admin', $output );
+		$this->assertStringContainsString( 'options-connectors.php', $output );
 		wp_set_current_user( 0 );
 	}
 }
