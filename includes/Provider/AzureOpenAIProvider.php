@@ -96,6 +96,11 @@ class AzureOpenAIProvider extends AbstractApiProvider {
 			}
 		}
 
+		// Provider logo path support was added in 1.3.0.
+		if ( version_compare( AiClient::VERSION, '1.3.0', '>=' ) ) {
+			$provider_meta[] = __DIR__ . '/logo.svg';
+		}
+
 		return new ProviderMetadata( ...$provider_meta );
 	}
 
