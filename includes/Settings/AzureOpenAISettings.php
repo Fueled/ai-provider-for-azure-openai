@@ -166,7 +166,7 @@ class AzureOpenAISettings {
 				printf(
 					/* translators: 1: link to the AI Credentials screen, 2: closing link tag */
 					esc_html__( 'Configure the connection to your Azure OpenAI resource. Enter the resource endpoint URL below, then add your API key to the %1$sSettings > Connectors%2$s screen.', 'ai-provider-for-azure-openai' ),
-					'<a href="' . esc_url( admin_url( 'options-general.php?page=connectors-wp-admin' ) ) . '">',
+					'<a href="' . esc_url( admin_url( 'options-connectors.php' ) ) . '">',
 					'</a>'
 				);
 				?>

@@ -38,7 +38,7 @@ Do not include `/openai/v1` — it is appended automatically. You can also set t
 
 ### 2. API Key
 
-Enter your Azure OpenAI API key on the **Settings > AI Credentials** screen under the `azure-openai` provider. You can find your API key in the Azure Portal under your resource → **Keys and Endpoint**.
+Enter your Azure OpenAI API key on the **Settings > AI Credentials** screen under the `azure_openai` provider. You can find your API key in the Azure Portal under your resource → **Keys and Endpoint**.
 
 ### 3. Deployments
 
@@ -63,7 +63,7 @@ On the **Settings > Azure OpenAI Settings** screen, add each of your Azure OpenA
 use WordPress\AI_Client\Prompt_Builder;
 
 $result = Prompt_Builder::create()
-    ->using_provider( 'azure-openai' )
+    ->using_provider( 'azure_openai' )
     ->set_system_instruction( 'You are a helpful assistant.' )
     ->add_text_message( 'Hello, how are you?' )
     ->generate_text();
@@ -87,10 +87,10 @@ AzureOpenAIModelMetadataDirectory::setDeployments( array(
 
 $registry = AiClient::defaultRegistry();
 $registry->registerProvider( AzureOpenAIProvider::class );
-$registry->setProviderRequestAuthentication( 'azure-openai', new ApiKeyRequestAuthentication( 'your-api-key' ) );
+$registry->setProviderRequestAuthentication( 'azure_openai', new ApiKeyRequestAuthentication( 'your-api-key' ) );
 
 $result = AiClient::prompt( 'Hello!' )
-    ->usingProvider( 'azure-openai' )
+    ->usingProvider( 'azure_openai' )
     ->usingModel( 'my-gpt4o' )
     ->generateText();
 ```
