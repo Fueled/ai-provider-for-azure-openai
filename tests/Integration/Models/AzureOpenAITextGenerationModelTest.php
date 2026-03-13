@@ -45,7 +45,7 @@ class AzureOpenAITextGenerationModelTest extends TestCase {
 		putenv( 'AZURE_OPENAI_ENDPOINT=https://myresource.openai.azure.com' );
 
 		$model_metadata    = new ModelMetadata( 'gpt-4o', 'gpt-4o', array(), array() );
-		$provider_metadata = new ProviderMetadata( 'azure-openai', 'Azure OpenAI', ProviderTypeEnum::cloud(), null, null );
+		$provider_metadata = new ProviderMetadata( 'azure_openai', 'Azure OpenAI', ProviderTypeEnum::cloud(), null, null );
 
 		$this->transporter = new MockHttpTransporter();
 		$this->model       = new AzureOpenAITextGenerationModel( $model_metadata, $provider_metadata );
