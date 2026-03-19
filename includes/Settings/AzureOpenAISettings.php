@@ -89,7 +89,7 @@ class AzureOpenAISettings {
 	public function register_settings_screen(): void {
 		add_options_page(
 			__( 'Azure OpenAI Settings', 'ai-provider-for-azure-openai' ),
-			__( 'Azure OpenAI Settings', 'ai-provider-for-azure-openai' ),
+			__( 'Azure OpenAI', 'ai-provider-for-azure-openai' ),
 			'manage_options',
 			self::PAGE_SLUG,
 			array( $this, 'render_screen' )
