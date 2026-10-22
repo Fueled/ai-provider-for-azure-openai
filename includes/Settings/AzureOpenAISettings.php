@@ -17,15 +17,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Class for the Azure OpenAI settings in the WordPress admin.
  *
- * Provides a settings page under Settings > Azure OpenAI Settings for
- * configuring the Azure OpenAI resource endpoint URL and deployments.
+ * Stores the Azure OpenAI resource endpoint URL and deployments. Where WordPress has a
+ * Connectors screen they are edited on its Azure OpenAI card (AzureOpenAIConnectorCard);
+ * elsewhere this class provides a page under Settings > Azure OpenAI Settings.
  *
  * @since 1.0.0
  */
 class AzureOpenAISettings {
 
 	private const OPTION_GROUP = 'wp-ai-client-azure-openai-settings';
-	private const OPTION_NAME  = 'wp_ai_client_azure_openai_settings';
+	public const OPTION_NAME   = 'wp_ai_client_azure_openai_settings';
 	private const PAGE_SLUG    = 'wp-ai-client-azure-openai';
 	private const SECTION_ID   = 'wp_ai_client_azure_openai_main';
 
@@ -35,27 +36,70 @@ class AzureOpenAISettings {
 	 * @since 1.0.0
 	 */
 	public function init(): void {
+		// Registered right away rather than on admin_init so the Connectors card can save it over REST.
+		$this->register_setting();
+
+		if ( self::has_connectors_screen() ) {
+			return;
+		}
+
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_menu', array( $this, 'register_settings_screen' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_settings_script' ) );
 	}
 
 	/**
-	 * Registers the setting and settings fields.
+	 * Whether WordPress has the Connectors screen (WordPress 7.0+), where the settings live on a card.
 	 *
-	 * @since 1.0.0
+	 * @since 1.1.0
+	 *
+	 * @return bool True when the Connectors screen exists.
 	 */
-	public function register_settings(): void {
+	public static function has_connectors_screen(): bool {
+		return function_exists( 'wp_get_connectors' );
+	}
+
+	/**
+	 * Registers the setting, exposed to the REST API for the Connectors card.
+	 *
+	 * @since 1.1.0
+	 */
+	public function register_setting(): void {
 		register_setting(
 			self::OPTION_GROUP,
 			self::OPTION_NAME,
 			array(
-				'type'              => 'array',
+				'type'              => 'object',
 				'default'           => array(),
 				'sanitize_callback' => array( $this, 'sanitize_settings' ),
+				'show_in_rest'      => array(
+					'schema' => array(
+						'type'       => 'object',
+						'properties' => array(
+							'endpoint'    => array( 'type' => 'string' ),
+							'deployments' => array(
+								'type'  => 'array',
+								'items' => array(
+									'type'       => 'object',
+									'properties' => array(
+										'name' => array( 'type' => 'string' ),
+										'type' => array( 'type' => 'string' ),
+									),
+								),
+							),
+						),
+					),
+				),
 			)
 		);
+	}
 
+	/**
+	 * Registers the settings fields.
+	 *
+	 * @since 1.0.0
+	 */
+	public function register_settings(): void {
 		add_settings_section(
 			self::SECTION_ID,
 			'',
@@ -111,10 +155,11 @@ class AzureOpenAISettings {
 
 		$endpoint = isset( $value['endpoint'] ) ? trim( (string) $value['endpoint'] ) : '';
 		if ( '' !== $endpoint ) {
-			$endpoint = rtrim( esc_url_raw( $endpoint ), '/' );
+			// Keep the resource URL only: a URL copied from the portal often ends in /openai/… already.
+			$endpoint = rtrim( (string) preg_replace( '#/openai(/.*)?$#i', '', rtrim( esc_url_raw( $endpoint ), '/' ) ), '/' );
 		}
 
-		$allowed_types = array( 'chat', 'chat_multimodal', 'image_dalle', 'image_gpt', 'tts' );
+		$allowed_types = array_keys( self::get_model_type_labels() );
 		$deployments   = array();
 
 		if ( isset( $value['deployments'] ) && is_array( $value['deployments'] ) ) {
@@ -232,7 +277,7 @@ class AzureOpenAISettings {
 	 *
 	 * @return array<string, string> Map of type key to display label.
 	 */
-	private function get_model_type_labels(): array {
+	public static function get_model_type_labels(): array {
 		return array(
 			'chat'            => __( 'Chat (Text Generation)', 'ai-provider-for-azure-openai' ),
 			'chat_multimodal' => __( 'Chat + Vision (Multimodal)', 'ai-provider-for-azure-openai' ),
@@ -254,7 +299,7 @@ class AzureOpenAISettings {
 		$raw_deps    = isset( $settings['deployments'] ) && is_array( $settings['deployments'] )
 			? $settings['deployments']
 			: array();
-		$model_types = $this->get_model_type_labels();
+		$model_types = self::get_model_type_labels();
 
 		// Pre-process into typed rows to keep template logic minimal.
 		$deployments = array();
@@ -354,7 +399,7 @@ class AzureOpenAISettings {
 			'wp-ai-client-azure-openai-settings',
 			'wpAiClientAzureOpenAISettings',
 			array(
-				'modelTypes' => $this->get_model_type_labels(),
+				'modelTypes' => self::get_model_type_labels(),
 				'nextIndex'  => count( $raw_deps ),
 			)
 		);

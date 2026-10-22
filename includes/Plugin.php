@@ -15,6 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 use Fueled\AiProviderForAzureOpenAI\Auth\AzureApiKeyRequestAuthentication;
+use Fueled\AiProviderForAzureOpenAI\Connectors\AzureOpenAIConnectorCard;
 use Fueled\AiProviderForAzureOpenAI\Metadata\AzureOpenAIModelMetadataDirectory;
 use Fueled\AiProviderForAzureOpenAI\Provider\AzureOpenAIProvider;
 use Fueled\AiProviderForAzureOpenAI\Settings\AzureOpenAISettings;
@@ -29,6 +30,15 @@ use WordPress\AiClient\Providers\Http\DTO\ApiKeyRequestAuthentication;
 class Plugin {
 
 	/**
+	 * The endpoint this plugin last put in AZURE_OPENAI_ENDPOINT, so any other value is known to come from the environment.
+	 *
+	 * @since 1.1.0
+	 *
+	 * @var string|null
+	 */
+	private static ?string $synced_endpoint = null;
+
+	/**
 	 * Initializes the plugin.
 	 *
 	 * @since 1.0.0
@@ -37,29 +47,33 @@ class Plugin {
 		add_action( 'init', array( $this, 'register_provider' ), 5 );
 		add_action( 'init', array( $this, 'convert_auth_to_azure' ), 25 );
 		add_action( 'init', array( $this, 'initialize_settings' ) );
+		add_action( 'add_option_' . AzureOpenAISettings::OPTION_NAME, array( $this, 'sync_settings' ) );
+		add_action( 'update_option_' . AzureOpenAISettings::OPTION_NAME, array( $this, 'sync_settings' ) );
+		add_action( 'delete_option_' . AzureOpenAISettings::OPTION_NAME, array( $this, 'sync_settings' ) );
+		add_action( 'init', array( new AzureOpenAIConnectorCard(), 'init' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( AI_PROVIDER_FOR_AZURE_OPENAI_PLUGIN_FILE ), array( $this, 'plugin_action_links' ) );
 	}
 
 	/**
-	 * Sets the AZURE_OPENAI_ENDPOINT environment variable.
+	 * Sets the AZURE_OPENAI_ENDPOINT environment variable from the settings.
+	 *
+	 * An endpoint set in the environment wins and is left alone.
 	 *
 	 * @since 1.0.0
 	 */
 	private function set_azure_endpoint(): void {
-		// Check if the AZURE_OPENAI_ENDPOINT environment variable is already set.
 		$env_endpoint = getenv( 'AZURE_OPENAI_ENDPOINT' );
-		if ( false !== $env_endpoint && '' !== $env_endpoint ) {
+		if ( false !== $env_endpoint && '' !== $env_endpoint && self::$synced_endpoint !== $env_endpoint ) {
 			return;
 		}
 
 		// Get the Azure OpenAI endpoint from the WordPress option.
 		$settings = AzureOpenAISettings::get_settings();
-		if ( ! isset( $settings['endpoint'] ) || '' === $settings['endpoint'] ) {
-			return;
-		}
+		$endpoint = isset( $settings['endpoint'] ) ? (string) $settings['endpoint'] : '';
 
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.runtime_configuration_putenv -- Required to set AZURE_OPENAI_ENDPOINT for the provider SDK.
-		putenv( 'AZURE_OPENAI_ENDPOINT=' . $settings['endpoint'] );
+		putenv( '' !== $endpoint ? 'AZURE_OPENAI_ENDPOINT=' . $endpoint : 'AZURE_OPENAI_ENDPOINT' );
+		self::$synced_endpoint = $endpoint;
 	}
 
 	/**
@@ -76,6 +90,20 @@ class Plugin {
 	}
 
 	/**
+	 * Hands the saved endpoint and deployments to the provider.
+	 *
+	 * Runs on registration and again whenever the settings are saved or deleted, so a check made in the
+	 * same request as the save, like the one WordPress runs when a key is saved on the
+	 * Connectors screen, sees the new values.
+	 *
+	 * @since 1.1.0
+	 */
+	public function sync_settings(): void {
+		$this->set_azure_endpoint();
+		$this->set_deployments();
+	}
+
+	/**
 	 * Registers the Azure OpenAI provider with the AI Client.
 	 *
 	 * @since 1.0.0
@@ -85,8 +113,7 @@ class Plugin {
 			return;
 		}
 
-		$this->set_azure_endpoint();
-		$this->set_deployments();
+		$this->sync_settings();
 
 		$registry = AiClient::defaultRegistry();
 
@@ -148,7 +175,7 @@ class Plugin {
 	 * Adds action links to the plugin list table.
 	 *
 	 * This adds "Settings" link to the plugin's action links
-	 * on the Plugins page.
+	 * on the Plugins page, pointing at the Connectors screen where it exists.
 	 *
 	 * @since 1.0.0
 	 *
@@ -158,7 +185,9 @@ class Plugin {
 	public function plugin_action_links( array $links ): array {
 		$settings_link = sprintf(
 			'<a href="%1$s">%2$s</a>',
-			admin_url( 'options-general.php?page=wp-ai-client-azure-openai' ),
+			AzureOpenAISettings::has_connectors_screen()
+				? admin_url( 'options-connectors.php' )
+				: admin_url( 'options-general.php?page=wp-ai-client-azure-openai' ),
 			esc_html__( 'Settings', 'ai-provider-for-azure-openai' )
 		);
 
