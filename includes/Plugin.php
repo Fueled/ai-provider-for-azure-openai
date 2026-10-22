@@ -35,7 +35,7 @@ class Plugin {
 	 */
 	public function init(): void {
 		add_action( 'init', array( $this, 'register_provider' ), 5 );
-		add_action( 'init', array( $this, 'convert_auth_to_azure' ), 15 );
+		add_action( 'init', array( $this, 'convert_auth_to_azure' ), 25 );
 		add_action( 'init', array( $this, 'initialize_settings' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( AI_PROVIDER_FOR_AZURE_OPENAI_PLUGIN_FILE ), array( $this, 'plugin_action_links' ) );
 	}
@@ -100,10 +100,10 @@ class Plugin {
 	/**
 	 * Swaps the standard Bearer-token authentication for Azure's `api-key` header authentication.
 	 *
-	 * Runs at priority 20, after wp-ai-client sets credentials at priority 10. Replaces a
-	 * standard ApiKeyRequestAuthentication (which sends `Authorization: Bearer`) with
-	 * AzureApiKeyRequestAuthentication (which sends `api-key: <key>`), so existing
-	 * credential management in wp-ai-client works without modification.
+	 * Runs at priority 25, after credentials are set: by the wp-ai-client plugin at priority 10, or by
+	 * WordPress core's Connectors at priority 20. Replaces a standard ApiKeyRequestAuthentication
+	 * (which sends `Authorization: Bearer`) with AzureApiKeyRequestAuthentication (which sends
+	 * `api-key: <key>`), so existing credential management works without modification.
 	 *
 	 * @since 1.0.0
 	 */
