@@ -23,7 +23,7 @@ Because Azure OpenAI uses deployment-based model access, this provider lets you 
 * Image generation with DALL-E 2, DALL-E 3, and GPT Image 1 deployments
 * Text-to-speech with TTS-1 and TTS-1-HD deployments
 * Function calling and structured output (JSON mode) support
-* Settings page for configuring your resource endpoint URL and deployments
+* An Azure OpenAI card on Settings > Connectors for the endpoint URL, API key and deployments, which checks that Azure accepts them
 * Environment variable support (`AZURE_OPENAI_ENDPOINT`) for dev/staging overrides
 
 **Requirements:**
@@ -37,8 +37,8 @@ Because Azure OpenAI uses deployment-based model access, this provider lets you 
 1. Ensure the WordPress AI Client plugin is installed and activated.
 2. Upload the plugin files to `/wp-content/plugins/ai-provider-for-azure-openai/`.
 3. Activate the plugin through the 'Plugins' menu in WordPress.
-4. Go to **Settings > Azure OpenAI Settings** to configure your endpoint URL and deployments.
-5. Enter your API key on the **Settings > AI Credentials** screen under the `azure_openai` provider.
+4. Go to **Settings > Connectors** and set up the **Azure OpenAI** card with your endpoint URL, API key and deployments.
+5. On WordPress versions before 7.0, use **Settings > Azure OpenAI Settings** for the endpoint and deployments, and the **Settings > AI Credentials** screen for the API key.
 
 == Frequently Asked Questions ==
 

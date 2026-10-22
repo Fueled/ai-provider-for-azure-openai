@@ -26,23 +26,27 @@ composer require fueled/ai-provider-for-azure-openai
 
 ## Configuration
 
+On WordPress 7.0 and later, everything is set on the **Azure OpenAI** card on **Settings > Connectors**: the endpoint URL, the API key and the deployments. On saving, the card asks Azure whether it accepts them and shows **Connected** when it does. On older versions, the endpoint and deployments are on **Settings > Azure OpenAI Settings**, and the key goes on the AI Credentials screen of the wp-ai-client plugin.
+
 ### 1. Endpoint URL
 
-Go to **Settings > Azure OpenAI Settings** and enter the base URL of your Azure OpenAI resource. You can find this in the Azure Portal under your resource → **Keys and Endpoint**. It looks like:
+The base URL of your Azure OpenAI resource. You can find this in the Azure Portal under your resource → **Keys and Endpoint**. It looks like:
 
 ```
 https://myresource.openai.azure.com
 ```
 
-Do not include `/openai/v1` — it is appended automatically. You can also set the `AZURE_OPENAI_ENDPOINT` environment variable to override this setting, which is useful for local development or staging environments.
+`/openai/v1` is appended automatically; if a pasted URL already has an `/openai/…` path, it is removed. You can also set the `AZURE_OPENAI_ENDPOINT` environment variable, which overrides this setting and locks the field. This is useful for local development or staging environments.
 
 ### 2. API Key
 
-Enter your Azure OpenAI API key on the **Settings > AI Credentials** screen under the `azure_openai` provider. You can find your API key in the Azure Portal under your resource → **Keys and Endpoint**.
+Your Azure OpenAI API key, from the same **Keys and Endpoint** page. It is sent in Azure's `api-key` header. When editing the card later, leave the key empty to keep the saved one.
+
+The connection check makes a small Responses API call to the first text deployment, or lists the resource's models when only image or speech deployments are configured. WordPress checks the connection on every load of the Connectors screen, so a successful check is remembered for a day per endpoint, deployment and key.
 
 ### 3. Deployments
 
-On the **Settings > Azure OpenAI Settings** screen, add each of your Azure OpenAI deployments by clicking **Add Deployment**. For each deployment, enter:
+Add each of your Azure OpenAI deployments with **Add deployment**. For each deployment, enter:
 
 - **Deployment Name** — the name you gave the deployment in [Azure AI Foundry](https://oai.azure.com/) (e.g. `my-gpt4o`).
 - **Model Type** — the capability set for this deployment:

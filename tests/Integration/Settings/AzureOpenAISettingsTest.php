@@ -101,23 +101,35 @@ class AzureOpenAISettingsTest extends \WP_UnitTestCase {
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Tests that init() registers register_settings on admin_init.
+	 * Tests that the settings page is only added where there is no Connectors screen.
 	 */
-	public function test_init_registers_admin_init_hook(): void {
+	public function test_init_adds_settings_page_only_without_connectors_screen(): void {
 		$this->settings->init();
-		$this->assertNotFalse(
-			has_action( 'admin_init', array( $this->settings, 'register_settings' ) )
-		);
+		$expected = ! AzureOpenAISettings::has_connectors_screen();
+
+		$this->assertSame( $expected, false !== has_action( 'admin_init', array( $this->settings, 'register_settings' ) ) );
+		$this->assertSame( $expected, false !== has_action( 'admin_menu', array( $this->settings, 'register_settings_screen' ) ) );
 	}
 
 	/**
-	 * Tests that init() registers register_settings_screen on admin_menu.
+	 * Tests that init() registers the setting for the REST API, so the Connectors card can save it.
 	 */
-	public function test_init_registers_admin_menu_hook(): void {
+	public function test_init_registers_setting_in_rest(): void {
 		$this->settings->init();
-		$this->assertNotFalse(
-			has_action( 'admin_menu', array( $this->settings, 'register_settings_screen' ) )
-		);
+		$registered = get_registered_settings();
+
+		$this->assertArrayHasKey( AzureOpenAISettings::OPTION_NAME, $registered );
+		$this->assertNotEmpty( $registered[ AzureOpenAISettings::OPTION_NAME ]['show_in_rest'] );
+	}
+
+	/**
+	 * Tests that an /openai path copied from the Azure portal is stripped from the endpoint.
+	 */
+	public function test_sanitize_settings_strips_openai_path(): void {
+		foreach ( array( 'https://myresource.openai.azure.com/openai/v1/', 'https://myresource.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2024-10-21', 'https://myresource.openai.azure.com/openai' ) as $input ) {
+			$result = $this->settings->sanitize_settings( array( 'endpoint' => $input ) );
+			$this->assertSame( 'https://myresource.openai.azure.com', $result['endpoint'], $input );
+		}
 	}
 
 	// -----------------------------------------------------------------------
